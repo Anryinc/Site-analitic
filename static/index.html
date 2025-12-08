@@ -13,13 +13,13 @@
 
   <div style="margin-bottom:16px">
     <label>Вакансия:
-      <select id="vacancyFilter"><option value="">Все</option></select>
+      <select id="vacancyFilter"></select>
     </label>
     <label style="margin-left:16px">Город:
       <select id="cityFilter"><option value="">Все</option></select>
     </label>
     <label style="margin-left:16px">Квартал:
-      <select id="quarterFilter"><option value="">Все</option></select>
+      <select id="quarterFilter"></select>
     </label>
   </div>
   <div style="width:900px;height:400px;">
@@ -47,18 +47,31 @@
       const quarterSet = new Set();
       for (const r of data) {
         if (r.vacancy_category) vacancySet.add(r.vacancy_category);
-        if (r.city) citySet.add(r.city);
+        if (r.city && r.city !== 'Все города') citySet.add(r.city); // Exclude 'Все города' from options
         if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
       }
       const vacancyFilter = document.getElementById('vacancyFilter');
       const cityFilter = document.getElementById('cityFilter');
       const quarterFilter = document.getElementById('quarterFilter');
-      function fillSelect(sel, values) {
-        sel.innerHTML = '<option value="">Все</option>' + Array.from(values).sort().map(v => `<option value="${v}">${v}</option>`).join('');
+      function fillSelect(sel, values, defaultValue = null) {
+        sel.innerHTML = Array.from(values).sort().map(v => `<option value="${v}">${v}</option>`).join('');
+        if (defaultValue) sel.value = defaultValue;
       }
-      fillSelect(vacancyFilter, vacancySet);
-      fillSelect(cityFilter, citySet);
-      fillSelect(quarterFilter, quarterSet);
+      // For vacancies: no "Все", sort alphabetically, select first
+      const sortedVacancies = Array.from(vacancySet).sort();
+      fillSelect(vacancyFilter, sortedVacancies, sortedVacancies[0]);
+
+      // For cities: keep "Все" as default, add sorted cities (excluding 'Все города')
+      const sortedCities = Array.from(citySet).sort();
+      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
+
+      // For quarters: no "Все", sort descending (newest first), select newest
+      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
+        const [yearA, qA] = a.split(' Q');
+        const [yearB, qB] = b.split(' Q');
+        return (yearB - yearA) || (qB - qA);
+      });
+      fillSelect(quarterFilter, sortedQuarters, sortedQuarters[0]);
     }
 
     function parseSalaryData(jsonField) {
@@ -70,11 +83,18 @@
       const vacancy = document.getElementById('vacancyFilter').value;
       const city = document.getElementById('cityFilter').value;
       const quarter = document.getElementById('quarterFilter').value;
-      return allData.filter(r =>
-        (!vacancy || r.vacancy_category === vacancy) &&
-        (!city || r.city === city) &&
-        (!quarter || getQuarter(r.upload_date) === quarter)
-      );
+      return allData.filter(r => {
+        const matchesVacancy = (!vacancy || r.vacancy_category === vacancy);
+        let matchesCity = true;
+        if (city === '') {
+          // Special logic for "Все": only rows where city === 'Все города'
+          matchesCity = (r.city === 'Все города');
+        } else {
+          matchesCity = (r.city === city);
+        }
+        const matchesQuarter = (!quarter || getQuarter(r.upload_date) === quarter);
+        return matchesVacancy && matchesCity && matchesQuarter;
+      });
     }
 
     function renderChart() {
@@ -107,7 +127,7 @@
         return (aIdx === -1 ? 999999 : aIdx) - (bIdx === -1 ? 999999 : bIdx);
       });
 
-      // Aggregate percentages for each salary range across all records
+      // Aggregate percentages for each salary range across all records (average: sum / count)
       const resumesByRange = {};
       const vacanciesByRange = {};
       for (const range of sortedRanges) {
@@ -134,29 +154,32 @@
       const ctx = document.getElementById('chart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
       chartInstance = new Chart(ctx, {
-        type: 'line',
+        type: 'bar', // Default to bar, but we'll override per dataset
         data: {
           labels: sortedRanges,
           datasets: [
             {
               label: 'Resumes %',
               data: resumesValues,
+              type: 'line', // Resumes as line
               borderColor: 'rgba(54,162,235,0.7)',
               backgroundColor: 'rgba(54,162,235,0.2)',
               tension: 0.1,
               fill: true,
               pointRadius: 1,
               borderWidth: 2,
+              yAxisID: 'y', // Share same axis
+              order: 2 // Higher order means drawn later (on top? Wait, order is for drawing order, lower first)
             },
             {
               label: 'Vacancies %',
               data: vacanciesValues,
+              type: 'bar', // Vacancies as bar
               borderColor: 'rgba(255,99,132,1)',
               backgroundColor: 'rgba(255,99,132,0.5)',
-              tension: 0.1,
-              fill: true,
-              pointRadius: 1,
               borderWidth: 2,
+              yAxisID: 'y', // Share same axis
+              order: 1 // Draw bars first, line on top? Wait, to have bars on top, draw line first (order 1 for line, 2 for bar)
             }
           ]
         },
