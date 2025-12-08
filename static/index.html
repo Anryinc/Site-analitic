@@ -6,8 +6,8 @@
   <title>Site Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto;padding:0 12px}
-    #chart{height:400px}
+    body { font-family: Arial, Helvetica, sans-serif; max-width: 1200px; margin: 20px auto; padding: 0 12px; }
+    #chart-container { width: 100%; max-width: 900px; height: 400px; margin: 0 auto; }
   </style>
 </head>
 <body>
@@ -33,8 +33,8 @@
       </select>
     </label>
   </div>
-  <div style="width:900px;height:400px;">
-    <canvas id="chart" width="900" height="400"></canvas>
+  <div id="chart-container">
+    <canvas id="chart"></canvas>
   </div>
 
   <script>
@@ -64,16 +64,13 @@
       const cityFilter = document.getElementById('cityFilter');
       const quarterFilter = document.getElementById('quarterFilter');
 
-      // Вакансии — без "Все", первая по алфавиту по умолчанию
       const sortedVacancies = Array.from(vacancySet).sort();
       vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
       if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
 
-      // Города — "Все" + остальные
       const sortedCities = Array.from(citySet).sort();
       cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
 
-      // Кварталы — от новых к старым, самый новый по умолчанию
       const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
         const [yA, qA] = a.split(' Q');
         const [yB, qB] = b.split(' Q');
@@ -138,7 +135,7 @@
         }
         const match = key.match(/(\d+)k_\d+k/);
         if (match) {
-          return match[1]; // просто начальное значение
+          return match[1];
         }
         return key;
       });
@@ -147,7 +144,6 @@
     function renderChart() {
       const data = filterData();
 
-      // Средние значения по всем строкам (average)
       const baseResumes = {};
       const baseVacancies = {};
       const baseRanges = new Set();
@@ -222,11 +218,11 @@
         options: {
           plugins: { legend: { position: 'top' } },
           scales: {
-            x: { ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 } },
-            y: { beginAtZero: true, suggestedMax: 100 }
+            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } },
+            y: { beginAtZero: true }
           },
           interaction: { mode: 'index', intersect: false },
-          responsive: false,
+          responsive: true,
           maintainAspectRatio: false
         }
       });
@@ -249,279 +245,6 @@
       });
       loadData();
     });
-  </script>
-</body>
-</html><!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Site Analytics</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto;padding:0 12px}#chart{height:400px}</style>
-</head>
-<body>
-  <h1>Site Analytics</h1>
-  <p>This page fetches `/api/analytics` and plots a simple chart. Adjust mapping in `static/index.html` if your rows differ.</p>
-
-  <div style="margin-bottom:16px">
-    <label>Вакансия:
-      <select id="vacancyFilter"></select>
-    </label>
-    <label style="margin-left:16px">Город:
-      <select id="cityFilter"><option value="">Все</option></select>
-    </label>
-    <label style="margin-left:16px">Квартал:
-      <select id="quarterFilter"></select>
-    </label>
-    <label style="margin-left:16px">Шаг ЗП:
-      <select id="stepFilter">
-        <option value="5">5 тыс</option>
-        <option value="10">10 тыс</option>
-        <option value="20">20 тыс</option>
-        <option value="50">50 тыс</option>
-      </select>
-    </label>
-  </div>
-  <div style="width:900px;height:400px;">
-    <canvas id="chart" width="900" height="400"></canvas>
-  </div>
-  <pre id="raw" style="display:none"></pre>
-
-  <script>
-    let allData = [];
-    let chartInstance = null;
-
-    function getQuarter(dateStr) {
-      // dateStr format: YYYY-MM-DD or ISO
-      const d = new Date(dateStr);
-      if (isNaN(d)) return '';
-      const year = d.getFullYear();
-      const month = d.getMonth();
-      const q = Math.floor(month / 3) + 1;
-      return `${year} Q${q}`;
-    }
-
-    function fillFilters(data) {
-      const vacancySet = new Set();
-      const citySet = new Set();
-      const quarterSet = new Set();
-      for (const r of data) {
-        if (r.vacancy_category) vacancySet.add(r.vacancy_category);
-        if (r.city && r.city !== 'Все города') citySet.add(r.city); // Exclude 'Все города' from options
-        if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
-      }
-      const vacancyFilter = document.getElementById('vacancyFilter');
-      const cityFilter = document.getElementById('cityFilter');
-      const quarterFilter = document.getElementById('quarterFilter');
-      function fillSelect(sel, values, defaultValue = null) {
-        sel.innerHTML = Array.from(values).sort().map(v => `<option value="${v}">${v}</option>`).join('');
-        if (defaultValue) sel.value = defaultValue;
-      }
-      // For vacancies: no "Все", sort alphabetically, select first
-      const sortedVacancies = Array.from(vacancySet).sort();
-      fillSelect(vacancyFilter, sortedVacancies, sortedVacancies[0]);
-
-      // For cities: keep "Все" as default, add sorted cities (excluding 'Все города')
-      const sortedCities = Array.from(citySet).sort();
-      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
-
-      // For quarters: no "Все", sort descending (newest first), select newest
-      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
-        const [yearA, qA] = a.split(' Q');
-        const [yearB, qB] = b.split(' Q');
-        return (yearB - yearA) || (qB - qA);
-      });
-      fillSelect(quarterFilter, sortedQuarters, sortedQuarters[0]);
-    }
-
-    function parseSalaryData(jsonField) {
-      if (!jsonField || typeof jsonField !== 'object') return {};
-      return jsonField;
-    }
-
-    function filterData() {
-      const vacancy = document.getElementById('vacancyFilter').value;
-      const city = document.getElementById('cityFilter').value;
-      const quarter = document.getElementById('quarterFilter').value;
-      return allData.filter(r => {
-        const matchesVacancy = (!vacancy || r.vacancy_category === vacancy);
-        let matchesCity = true;
-        if (city === '') {
-          // Special logic for "Все": only rows where city === 'Все города'
-          matchesCity = (r.city === 'Все города');
-        } else {
-          matchesCity = (r.city === city);
-        }
-        const matchesQuarter = (!quarter || getQuarter(r.upload_date) === quarter);
-        return matchesVacancy && matchesCity && matchesQuarter;
-      });
-    }
-
-    function aggregateData(byRange, step) {
-      const aggregated = {};
-      let start = 0;
-      while (start < 1000) {
-        let end = start + step;
-        let label = (start === 0) ? `less_${end}k` : `${start}k_${end}k`;
-        let sum = 0;
-        for (const key in byRange) {
-          if (key === 'more_1000k') continue;
-          if (key === 'less_5k') {
-            if (start === 0) sum += byRange[key] || 0;
-            continue;
-          }
-          const [lStr, hStr] = key.split('_');
-          const l = parseInt(lStr.replace('k', ''));
-          const h = parseInt(hStr.replace('k', ''));
-          if (l >= start && h <= end) {
-            sum += byRange[key] || 0;
-          }
-        }
-        aggregated[label] = sum;
-        start = end;
-      }
-      aggregated['more_1000k'] = byRange['more_1000k'] || 0;
-
-      // Sort aggregated ranges
-      const sortedRanges = Object.keys(aggregated).sort((a, b) => {
-        const getLow = r => {
-          if (r.startsWith('less_')) return -1;
-          if (r === 'more_1000k') return 1001;
-          return parseInt(r.split('k_')[0]);
-        };
-        return getLow(a) - getLow(b);
-      });
-
-      const values = sortedRanges.map(r => aggregated[r]);
-      return { ranges: sortedRanges, values: values };
-    }
-
-    function renderChart() {
-      const data = filterData();
-      document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
-
-      // Collect all salary ranges and aggregate percentages
-      const allRanges = new Set();
-      const resumesData = [];
-      const vacanciesData = [];
-
-      for (const record of data) {
-        const resumes = parseSalaryData(record.resumes_pct_json);
-        const vacancies = parseSalaryData(record.vacancies_pct_json);
-        resumesData.push(resumes);
-        vacanciesData.push(vacancies);
-        Object.keys(resumes).forEach(k => allRanges.add(k));
-        Object.keys(vacancies).forEach(k => allRanges.add(k));
-      }
-
-      // Sort salary ranges (base 5k)
-      const salaryOrder = ['less_5k'];
-      for (let i = 5; i <= 1000; i += 5) {
-        salaryOrder.push(`${i}k_${i+5}k`);
-      }
-      salaryOrder.push('more_1000k');
-      const sortedRanges = Array.from(allRanges).sort((a, b) => {
-        const aIdx = salaryOrder.indexOf(a);
-        const bIdx = salaryOrder.indexOf(b);
-        return (aIdx === -1 ? 999999 : aIdx) - (bIdx === -1 ? 999999 : bIdx);
-      });
-
-      // Aggregate percentages for each salary range across all records (average: sum / count)
-      const resumesByRange = {};
-      const vacanciesByRange = {};
-      for (const range of sortedRanges) {
-        let resumeSum = 0;
-        let vacancySum = 0;
-        let resumeCount = 0;
-        let vacancyCount = 0;
-        for (let i = 0; i < resumesData.length; i++) {
-          if (resumesData[i][range] !== undefined) {
-            resumeSum += resumesData[i][range];
-            resumeCount++;
-          }
-          if (vacanciesData[i][range] !== undefined) {
-            vacancySum += vacanciesData[i][range];
-            vacancyCount++;
-          }
-        }
-        resumesByRange[range] = resumeCount > 0 ? resumeSum / resumeCount : 0;
-        vacanciesByRange[range] = vacancyCount > 0 ? vacancySum / vacancyCount : 0;
-      }
-
-      // Get selected step and aggregate
-      const step = parseInt(document.getElementById('stepFilter').value) || 5;
-      const aggResumes = aggregateData(resumesByRange, step);
-      const aggVacancies = aggregateData(vacanciesByRange, step);
-
-      const ctx = document.getElementById('chart').getContext('2d');
-      if (chartInstance) chartInstance.destroy();
-      chartInstance = new Chart(ctx, {
-        type: 'bar', // Default to bar, but we'll override per dataset
-        data: {
-          labels: aggResumes.ranges,
-          datasets: [
-            {
-              label: 'Resumes %',
-              data: aggResumes.values,
-              type: 'line', // Resumes as line
-              borderColor: 'rgba(54,162,235,0.7)',
-              backgroundColor: 'rgba(54,162,235,0.2)',
-              tension: 0.1,
-              fill: true,
-              pointRadius: 1,
-              borderWidth: 2,
-              yAxisID: 'y', // Share same axis
-              order: 1 // Draw line first (under bars)
-            },
-            {
-              label: 'Vacancies %',
-              data: aggVacancies.values,
-              type: 'bar', // Vacancies as bar
-              borderColor: 'rgba(255,99,132,1)',
-              backgroundColor: 'rgba(255,99,132,0.5)',
-              borderWidth: 2,
-              yAxisID: 'y', // Share same axis
-              order: 2 // Draw bars second (on top)
-            }
-          ]
-        },
-        options: {
-          scales: { 
-            x: { display: true, ticks: { maxRotation: 45, minRotation: 45 } }, 
-            y: { beginAtZero: true } 
-          },
-          interaction: { mode: 'index', intersect: false },
-          plugins: { legend: { position: 'top' } },
-          responsive: false,
-          maintainAspectRatio: false
-        }
-      });
-    }
-
-    async function loadData(){
-      const res = await fetch('/api/analytics?limit=500');
-      if(!res.ok){
-        document.body.insertAdjacentHTML('beforeend', `<p style="color:red">Failed to fetch: ${res.status} ${res.statusText}</p>`);
-        const txt = await res.text();
-        document.getElementById('raw').textContent = txt;
-        return;
-      }
-      allData = await res.json();
-      fillFilters(allData);
-      renderChart();
-    }
-
-    // Add event listeners for filters
-    window.addEventListener('DOMContentLoaded', () => {
-      ['vacancyFilter','cityFilter','quarterFilter', 'stepFilter'].forEach(id => {
-        document.getElementById(id).addEventListener('change', renderChart);
-      });
-    });
-
-    loadData().catch(e=>{
-      document.body.insertAdjacentHTML('beforeend', `<pre style="color:red">${e}</pre>`)
-    })
   </script>
 </body>
 </html>
