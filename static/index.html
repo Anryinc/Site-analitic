@@ -12,9 +12,10 @@
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px; border-radius: 6px; border: 1px solid #ccc; }
     #chart-container { position: relative; width: 100%; max-width: 1000px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
-    #ruler { height: 50px; background: #222; position: relative; margin-top: -10px; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-    .grade-line { position: absolute; width: 4px; height: 100%; top: 0; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-    .grade-label { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+    #chart { height: calc(100% - 50px); width: 100%; }
+    #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+    .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
   </style>
 </head>
@@ -45,140 +46,168 @@
     let allData = [];
     let chartInstance = null;
 
-    // Грейды и их цвета
+    // Грейды и их цвета, включая финальную "End"
     const grades = [
       { name: "Intern", color: "#FF9800", value: 60 },
       { name: "Junior", color: "#4CAF50", value: 140 },
       { name: "Middle", color: "#2196F3", value: 280 },
       { name: "Senior", color: "#9C27B0", value: 500 },
-      { name: "Lead",   color: "#F44336", value: 800 }
+      { name: "Lead", color: "#F44336", value: 800 },
+      { name: "End", color: "#000000", value: 1000 }
     ];
 
-    function getQuarter(d) {
-      const date = new Date(d);
-      const y = date.getFullYear();
-      const q = Math.floor(date.getMonth() / 3) + 1;
-      return `${y} Q${q}`;
+    function getQuarter(dateStr) {
+      const d = new Date(dateStr);
+      if (isNaN(d)) return '';
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const q = Math.floor(month / 3) + 1;
+      return `${year} Q${q}`;
     }
 
-    // === Загрузка и фильтры ===
     async function loadData() {
       const res = await fetch('/api/analytics?limit=1000');
-      if (!res.ok) return alert('Ошибка загрузки данных');
+      if (!res.ok) {
+        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
+        return;
+      }
       allData = await res.json();
-      fillFilters();
+      fillFilters(allData);
       renderChart();
     }
 
-    function fillFilters() {
-      const sets = { vacancy: new Set(), city: new Set(), quarter: new Set() };
-      allData.forEach(r => {
-        if (r.vacancy_category) sets.vacancy.add(r.vacancy_category);
-        if (r.city && r.city !== 'Все города') sets.city.add(r.city);
-        if (r.upload_date) sets.quarter.add(getQuarter(r.upload_date));
+    function fillFilters(data) {
+      const vacancySet = new Set();
+      const citySet = new Set();
+      const quarterSet = new Set();
+      for (const r of data) {
+        if (r.vacancy_category) vacancySet.add(r.vacancy_category);
+        if (r.city && r.city !== 'Все города') citySet.add(r.city);
+        if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
+      }
+
+      const vacancyFilter = document.getElementById('vacancyFilter');
+      const cityFilter = document.getElementById('cityFilter');
+      const quarterFilter = document.getElementById('quarterFilter');
+
+      const sortedVacancies = Array.from(vacancySet).sort();
+      vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
+
+      const sortedCities = Array.from(citySet).sort();
+      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
+
+      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
+        const [yA, qA] = a.split(' Q');
+        const [yB, qB] = b.split(' Q');
+        return (yB - yA) || (qB - qA);
       });
-
-      document.getElementById('vacancyFilter').innerHTML = [...sets.vacancy].sort().map(v => `<option>${v}</option>`).join('');
-      document.getElementById('cityFilter').innerHTML = '<option value="">Все</option>' + [...sets.city].sort().map(v => `<option>${v}</option>`).join('');
-      document.getElementById('quarterFilter').innerHTML = [...sets.quarter].sort((a,b) => b.localeCompare(a)).map(v => `<option>${v}</option>`).join('');
-
-      // defaults
-      document.getElementById('vacancyFilter').value = document.getElementById('vacancyFilter').options[0]?.value || '';
-      document.getElementById('quarterFilter').value = document.getElementById('quarterFilter').options[0]?.value || '';
+      quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
     }
 
-    // === Фильтрация ===
-    function getFilteredData() {
-      const v = document.getElementById('vacancyFilter').value;
-      const c = document.getElementById('cityFilter').value;
-      const q = document.getElementById('quarterFilter').value;
+    function parseSalaryData(jsonField) {
+      if (!jsonField || typeof jsonField !== 'object') return {};
+      return jsonField;
+    }
+
+    function filterData() {
+      const vacancy = document.getElementById('vacancyFilter').value;
+      const city = document.getElementById('cityFilter').value;
+      const quarter = document.getElementById('quarterFilter').value;
 
       return allData.filter(r => {
-        if (v && r.vacancy_category !== v) return false;
-        if (c === '' && r.city !== 'Все города') return false;
-        if (c && r.city !== c) return false;
-        if (q && getQuarter(r.upload_date) !== q) return false;
-        return true;
+        const matchesVacancy = r.vacancy_category === vacancy;
+        const matchesCity = city === '' ? r.city === 'Все города' : r.city === city;
+        const matchesQuarter = getQuarter(r.upload_date) === quarter;
+        return matchesVacancy && matchesCity && matchesQuarter;
       });
     }
 
-    // === Агрегация по шагу ===
-    function aggregate(raw, step) {
-      const result = {};
+    function aggregateData(rawByRange, step) {
+      const aggregated = {};
       let start = 0;
       while (start < 1000) {
         const end = start + step;
         const key = start === 0 ? `less_${end}k` : `${start}k_${end}k`;
         let sum = 0;
-        for (const k in raw) {
-          if (k === 'more_1000k') continue;
-          if (k === 'less_5k' && start === 0) { sum += raw[k]; continue; }
-          const [l, h] = k.split('_').map(x => parseInt(x.replace('k','')));
-          if (l >= start && h <= end) sum += raw[k] || 0;
+
+        for (const rangeKey in rawByRange) {
+          if (rangeKey === 'more_1000k') continue;
+          if (rangeKey === 'less_5k') {
+            if (start === 0) sum += rawByRange[rangeKey] || 0;
+            continue;
+          }
+          const [lStr, hStr] = rangeKey.split('_');
+          const low = parseInt(lStr.replace('k', ''));
+          const high = parseInt(hStr.replace('k', ''));
+          if (low >= start && high <= end) {
+            sum += rawByRange[rangeKey] || 0;
+          }
         }
-        result[key] = sum;
+        aggregated[key] = sum;
         start = end;
       }
-      result['more_1000k'] = raw['more_1000k'] || 0;
-      return result;
+      aggregated['more_1000k'] = rawByRange['more_1000k'] || 0;
+      return aggregated;
     }
 
-    function formatLabel(key, step) {
-      if (key === 'more_1000k') return 'выше 1000';
-      if (key.startsWith('less_')) return `до ${key.match(/\d+/)[0]}`;
-      return key.match(/(\d+)k/)[1];
-    }
-
-    // === Отрисовка ===
-    function renderChart() {
-      const data = getFilteredData();
-      if (data.length === 0) return;
-
-      // Средние значения по базовым 5k диапазонам
-      const base = { resumes: {}, vacancies: {} };
-      const ranges = new Set();
-
-      data.forEach(r => {
-        ['resumes_pct_json', 'vacancies_pct_json'].forEach(field => {
-          const obj = r[field] || {};
-          Object.keys(obj).forEach(k => ranges.add(k));
-        });
-      });
-
-      [...ranges].sort((a,b) => {
-        const order = ['less_5k', ...Array.from({length:200},(_,i)=>`${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
-        return order.indexOf(a) - order.indexOf(b);
-      }).forEach(range => {
-        let rs = 0, rc = 0, vs = 0, vc = 0;
-        data.forEach(r => {
-          if (r.resumes_pct_json?.[range] !== undefined) { rs += r.resumes_pct_json[range]; rc++; }
-          if (r.vacancies_pct_json?.[range] !== undefined) { vs += r.vacancies_pct_json[range]; vc++; }
-        });
-        base.resumes[range] = rc ? rs/rc : 0;
-        base.vacancies[range] = vc ? vs/vc : 0;
-      });
-
-      const step = +document.getElementById('stepFilter').value;
-      const aggR = aggregate(base.resumes, step);
-      const aggV = aggregate(base.vacancies, step);
-
-      const labels = Object.keys(aggR).map(k => formatLabel(k, step));
-      const chartDataR = Object.values(aggR);
-      const chartDataV = Object.values(aggV);
-
-      // Подсчёт реальных зарплатных точек для линейки
-      const salaryPoints = [];
-      let current = 0;
-      Object.keys(aggR).forEach((key, i) => {
-        if (key === 'more_1000k') {
-          salaryPoints.push(1000);
-        } else if (key.startsWith('less_')) {
-          salaryPoints.push(parseInt(key.match(/\d+/)[0]));
-        } else {
-          salaryPoints.push(current + step);
+    function formatLabels(aggregatedRanges, step) {
+      return aggregatedRanges.map(key => {
+        if (key === 'more_1000k') return `выше 1000`;
+        if (key.startsWith('less_')) {
+          const limit = key.match(/less_(\d+)k/)[1];
+          return `до ${limit}`;
         }
-        current += step;
+        const match = key.match(/(\d+)k_\d+k/);
+        if (match) {
+          return match[1];
+        }
+        return key;
       });
+    }
+
+    function renderChart() {
+      const data = filterData();
+
+      const baseResumes = {};
+      const baseVacancies = {};
+      const baseRanges = new Set();
+
+      data.forEach(record => {
+        const resumes = parseSalaryData(record.resumes_pct_json);
+        const vacancies = parseSalaryData(record.vacancies_pct_json);
+        Object.keys(resumes).forEach(k => baseRanges.add(k));
+        Object.keys(vacancies).forEach(k => baseRanges.add(k));
+      });
+
+      const sortedBase = Array.from(baseRanges).sort((a, b) => {
+        const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
+        return order.indexOf(a) - order.indexOf(b);
+      });
+
+      sortedBase.forEach(range => {
+        let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
+        data.forEach(rec => {
+          if (rec.resumes_pct_json && rec.resumes_pct_json[range] !== undefined) {
+            rSum += rec.resumes_pct_json[range];
+            rCnt++;
+          }
+          if (rec.vacancies_pct_json && rec.vacancies_pct_json[range] !== undefined) {
+            vSum += rec.vacancies_pct_json[range];
+            vCnt++;
+          }
+        });
+        baseResumes[range] = rCnt ? rSum / rCnt : 0;
+        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
+      });
+
+      const step = parseInt(document.getElementById('stepFilter').value) || 20;
+
+      const aggResumes = aggregateData(baseResumes, step);
+      const aggVacancies = aggregateData(baseVacancies, step);
+      const rawLabels = Object.keys(aggResumes);
+      const niceLabels = formatLabels(rawLabels, step);
 
       const ctx = document.getElementById('chart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
@@ -186,36 +215,61 @@
       chartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: labels,
+          labels: niceLabels,
           datasets: [
-            { label: 'Резюме %', data: chartDataR, type: 'line', borderColor: '#2196F3', backgroundColor: 'rgba(33,150,243,0.1)', fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2 },
-            { label: 'Вакансии %', data: chartDataV, type: 'bar', backgroundColor: 'rgba(255,99,132,0.6)', borderColor: '#f44336', barThickness: 20 }
+            {
+              label: 'Резюме %',
+              data: Object.values(aggResumes),
+              type: 'line',
+              borderColor: 'rgba(54,162,235,0.9)',
+              backgroundColor: 'rgba(54,162,235,0.1)',
+              tension: 0.2,
+              fill: true,
+              pointRadius: 1,
+              borderWidth: 1,
+              order: 1
+            },
+            {
+              label: 'Вакансии %',
+              data: Object.values(aggVacancies),
+              type: 'bar',
+              backgroundColor: 'rgba(255,99,132,0.6)',
+              borderColor: 'rgba(255,99,132,1)',
+              borderWidth: 1,
+              barThickness: 10,
+              order: 2
+            }
           ]
         },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
           plugins: { legend: { position: 'top' } },
-          scales: { x: { ticks: { maxRotation: 90, minRotation: 90 } }, y: { beginAtZero: true } }
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } },
+            y: { beginAtZero: true }
+          },
+          interaction: { mode: 'index', intersect: false },
+          responsive: true,
+          maintainAspectRatio: false
         }
       });
 
-      // === Линейка и грейд-линии ===
+      // Очистка ruler
       const ruler = document.getElementById('ruler');
       ruler.innerHTML = '';
-      const containerWidth = ruler.clientWidth;
 
-      // Деления на линейке
-      salaryPoints.forEach((val, i) => {
-        const x = (i / (salaryPoints.length - 1)) * containerWidth;
+      // Создание ticks на ruler
+      const containerWidth = document.getElementById('chart-container').clientWidth;
+      const numBuckets = niceLabels.length;
+      for (let i = 0; i < numBuckets; i++) {
         const tick = document.createElement('div');
         tick.className = 'ruler-tick';
-        tick.style.left = x + 'px';
-        tick.textContent = val;
+        tick.style.left = `${(i / (numBuckets - 1)) * 100}%`;
+        tick.textContent = niceLabels[i];
         ruler.appendChild(tick);
-      });
+      }
 
-      // Грейд-линии
+      // Создание линий поверх графика
+      const container = document.getElementById('chart-container');
       grades.forEach((g, i) => {
         const line = document.createElement('div');
         line.className = 'grade-line';
@@ -227,40 +281,40 @@
         label.textContent = g.name;
 
         line.appendChild(label);
-        ruler.appendChild(line);
+        container.appendChild(line);
 
-        // Позиционирование
-        function updatePosition() {
-          const percent = g.value / 1000;
-          const x = percent * containerWidth;
-          line.style.left = x + 'px';
-          g.currentValue = g.value;
-        }
-        updatePosition();
+        updateLinePosition(line, g, containerWidth, step);
 
-        // Drag & drop
+        // Перетаскивание
         let dragging = false;
-        line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
-        document.addEventListener('mousemove', e => {
+        line.addEventListener('mousedown', (e) => {
+          dragging = true;
+          e.preventDefault();
+        });
+        document.addEventListener('mousemove', (e) => {
           if (!dragging) return;
-          const rect = ruler.getBoundingClientRect();
+          const rect = container.getBoundingClientRect();
           let newX = e.clientX - rect.left;
           newX = Math.max(0, Math.min(containerWidth, newX));
           const newPercent = newX / containerWidth;
           g.value = Math.round(newPercent * 1000 / step) * step;
-          updatePosition();
+          updateLinePosition(line, g, containerWidth, step);
         });
         document.addEventListener('mouseup', () => dragging = false);
       });
     }
 
-    // События
-    ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
-      document.getElementById(id).addEventListener('change', renderChart);
-    });
+    function updateLinePosition(line, g, width, step) {
+      const percent = g.value / 1000;
+      line.style.left = `${percent * width}px`;
+    }
 
-    window.addEventListener('resize', renderChart);
-    loadData();
+    window.addEventListener('DOMContentLoaded', () => {
+      ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
+        document.getElementById(id).addEventListener('change', renderChart);
+      });
+      loadData();
+    });
   </script>
 </body>
 </html>
