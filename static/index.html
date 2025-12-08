@@ -209,6 +209,16 @@
           labels: aggResumes.ranges,
           datasets: [
             {
+              label: 'Vacancies %',
+              data: aggVacancies.values,
+              type: 'bar', // Vacancies as bar
+              borderColor: 'rgba(255,99,132,1)',
+              backgroundColor: 'rgba(255,99,132,0.5)',
+              borderWidth: 2,
+              yAxisID: 'y', // Share same axis
+              order: 2 // Draw bars second (on top)
+            },
+            {
               label: 'Resumes %',
               data: aggResumes.values,
               type: 'line', // Resumes as line
@@ -220,16 +230,6 @@
               borderWidth: 2,
               yAxisID: 'y', // Share same axis
               order: 1 // Draw line first (under bars)
-            },
-            {
-              label: 'Vacancies %',
-              data: aggVacancies.values,
-              type: 'bar', // Vacancies as bar
-              borderColor: 'rgba(255,99,132,1)',
-              backgroundColor: 'rgba(255,99,132,0.5)',
-              borderWidth: 2,
-              yAxisID: 'y', // Share same axis
-              order: 2 // Draw bars second (on top)
             }
           ]
         },
