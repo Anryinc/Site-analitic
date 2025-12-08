@@ -21,6 +21,14 @@
     <label style="margin-left:16px">Квартал:
       <select id="quarterFilter"></select>
     </label>
+    <label style="margin-left:16px">Шаг ЗП:
+      <select id="stepFilter">
+        <option value="5">5 тыс</option>
+        <option value="10">10 тыс</option>
+        <option value="20">20 тыс</option>
+        <option value="50">50 тыс</option>
+      </select>
+    </label>
   </div>
   <div style="width:900px;height:400px;">
     <canvas id="chart" width="900" height="400"></canvas>
@@ -97,6 +105,45 @@
       });
     }
 
+    function aggregateData(byRange, step) {
+      const aggregated = {};
+      let start = 0;
+      while (start < 1000) {
+        let end = start + step;
+        let label = (start === 0) ? `less_${end}k` : `${start}k_${end}k`;
+        let sum = 0;
+        for (const key in byRange) {
+          if (key === 'more_1000k') continue;
+          if (key === 'less_5k') {
+            if (start === 0) sum += byRange[key] || 0;
+            continue;
+          }
+          const [lStr, hStr] = key.split('_');
+          const l = parseInt(lStr.replace('k', ''));
+          const h = parseInt(hStr.replace('k', ''));
+          if (l >= start && h <= end) {
+            sum += byRange[key] || 0;
+          }
+        }
+        aggregated[label] = sum;
+        start = end;
+      }
+      aggregated['more_1000k'] = byRange['more_1000k'] || 0;
+
+      // Sort aggregated ranges
+      const sortedRanges = Object.keys(aggregated).sort((a, b) => {
+        const getLow = r => {
+          if (r.startsWith('less_')) return -1;
+          if (r === 'more_1000k') return 1001;
+          return parseInt(r.split('k_')[0]);
+        };
+        return getLow(a) - getLow(b);
+      });
+
+      const values = sortedRanges.map(r => aggregated[r]);
+      return { ranges: sortedRanges, values: values };
+    }
+
     function renderChart() {
       const data = filterData();
       document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
@@ -115,7 +162,7 @@
         Object.keys(vacancies).forEach(k => allRanges.add(k));
       }
 
-      // Sort salary ranges
+      // Sort salary ranges (base 5k)
       const salaryOrder = ['less_5k'];
       for (let i = 5; i <= 1000; i += 5) {
         salaryOrder.push(`${i}k_${i+5}k`);
@@ -148,19 +195,22 @@
         resumesByRange[range] = resumeCount > 0 ? resumeSum / resumeCount : 0;
         vacanciesByRange[range] = vacancyCount > 0 ? vacancySum / vacancyCount : 0;
       }
-      const resumesValues = sortedRanges.map(r => resumesByRange[r]);
-      const vacanciesValues = sortedRanges.map(r => vacanciesByRange[r]);
+
+      // Get selected step and aggregate
+      const step = parseInt(document.getElementById('stepFilter').value) || 5;
+      const aggResumes = aggregateData(resumesByRange, step);
+      const aggVacancies = aggregateData(vacanciesByRange, step);
 
       const ctx = document.getElementById('chart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
       chartInstance = new Chart(ctx, {
         type: 'bar', // Default to bar, but we'll override per dataset
         data: {
-          labels: sortedRanges,
+          labels: aggResumes.ranges,
           datasets: [
             {
               label: 'Resumes %',
-              data: resumesValues,
+              data: aggResumes.values,
               type: 'line', // Resumes as line
               borderColor: 'rgba(54,162,235,0.7)',
               backgroundColor: 'rgba(54,162,235,0.2)',
@@ -169,17 +219,17 @@
               pointRadius: 1,
               borderWidth: 2,
               yAxisID: 'y', // Share same axis
-              order: 2 // Higher order means drawn later (on top? Wait, order is for drawing order, lower first)
+              order: 1 // Draw line first (under bars)
             },
             {
               label: 'Vacancies %',
-              data: vacanciesValues,
+              data: aggVacancies.values,
               type: 'bar', // Vacancies as bar
               borderColor: 'rgba(255,99,132,1)',
               backgroundColor: 'rgba(255,99,132,0.5)',
               borderWidth: 2,
               yAxisID: 'y', // Share same axis
-              order: 1 // Draw bars first, line on top? Wait, to have bars on top, draw line first (order 1 for line, 2 for bar)
+              order: 2 // Draw bars second (on top)
             }
           ]
         },
@@ -211,7 +261,7 @@
 
     // Add event listeners for filters
     window.addEventListener('DOMContentLoaded', () => {
-      ['vacancyFilter','cityFilter','quarterFilter'].forEach(id => {
+      ['vacancyFilter','cityFilter','quarterFilter', 'stepFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', renderChart);
       });
     });
