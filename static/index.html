@@ -5,6 +5,259 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Site Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto;padding:0 12px}
+    #chart{height:400px}
+  </style>
+</head>
+<body>
+  <h1>Site Analytics</h1>
+  <p>Аналитика распределения зарплат по вакансиям и резюме</p>
+
+  <div style="margin-bottom:16px">
+    <label>Вакансия:
+      <select id="vacancyFilter"></select>
+    </label>
+    <label style="margin-left:16px">Город:
+      <select id="cityFilter"><option value="">Все</option></select>
+    </label>
+    <label style="margin-left:16px">Квартал:
+      <select id="quarterFilter"></select>
+    </label>
+    <label style="margin-left:16px">Шаг ЗП:
+      <select id="stepFilter">
+        <option value="5">5 тыс</option>
+        <option value="10">10 тыс</option>
+        <option value="20" selected>20 тыс</option>
+        <option value="50">50 тыс</option>
+      </select>
+    </label>
+  </div>
+  <div style="width:900px;height:400px;">
+    <canvas id="chart" width="900" height="400"></canvas>
+  </div>
+
+  <script>
+    let allData = [];
+    let chartInstance = null;
+
+    function getQuarter(dateStr) {
+      const d = new Date(dateStr);
+      if (isNaN(d)) return '';
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const q = Math.floor(month / 3) + 1;
+      return `${year} Q${q}`;
+    }
+
+    function fillFilters(data) {
+      const vacancySet = new Set();
+      const citySet = new Set();
+      const quarterSet = new Set();
+      for (const r of data) {
+        if (r.vacancy_category) vacancySet.add(r.vacancy_category);
+        if (r.city && r.city !== 'Все города') citySet.add(r.city);
+        if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
+      }
+
+      const vacancyFilter = document.getElementById('vacancyFilter');
+      const cityFilter = document.getElementById('cityFilter');
+      const quarterFilter = document.getElementById('quarterFilter');
+
+      // Вакансии — без "Все", первая по алфавиту по умолчанию
+      const sortedVacancies = Array.from(vacancySet).sort();
+      vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
+
+      // Города — "Все" + остальные
+      const sortedCities = Array.from(citySet).sort();
+      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
+
+      // Кварталы — от новых к старым, самый новый по умолчанию
+      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
+        const [yA, qA] = a.split(' Q');
+        const [yB, qB] = b.split(' Q');
+        return (yB - yA) || (qB - qA);
+      });
+      quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
+    }
+
+    function parseSalaryData(jsonField) {
+      if (!jsonField || typeof jsonField !== 'object') return {};
+      return jsonField;
+    }
+
+    function filterData() {
+      const vacancy = document.getElementById('vacancyFilter').value;
+      const city = document.getElementById('cityFilter').value;
+      const quarter = document.getElementById('quarterFilter').value;
+
+      return allData.filter(r => {
+        const matchesVacancy = r.vacancy_category === vacancy;
+        const matchesCity = city === '' ? r.city === 'Все города' : r.city === city;
+        const matchesQuarter = getQuarter(r.upload_date) === quarter;
+        return matchesVacancy && matchesCity && matchesQuarter;
+      });
+    }
+
+    function aggregateData(rawByRange, step) {
+      const aggregated = {};
+      let start = 0;
+      while (start < 1000) {
+        const end = start + step;
+        const key = start === 0 ? `less_${end}k` : `${start}k_${end}k`;
+        let sum = 0;
+
+        for (const rangeKey in rawByRange) {
+          if (rangeKey === 'more_1000k') continue;
+          if (rangeKey === 'less_5k') {
+            if (start === 0) sum += rawByRange[rangeKey] || 0;
+            continue;
+          }
+          const [lStr, hStr] = rangeKey.split('_');
+          const low = parseInt(lStr.replace('k', ''));
+          const high = parseInt(hStr.replace('k', ''));
+          if (low >= start && high <= end) {
+            sum += rawByRange[rangeKey] || 0;
+          }
+        }
+        aggregated[key] = sum;
+        start = end;
+      }
+      aggregated['more_1000k'] = rawByRange['more_1000k'] || 0;
+      return aggregated;
+    }
+
+    function formatLabels(aggregatedRanges, step) {
+      return aggregatedRanges.map(key => {
+        if (key === 'more_1000k') return `выше 1000`;
+        if (key.startsWith('less_')) {
+          const limit = key.match(/less_(\d+)k/)[1];
+          return `до ${limit}`;
+        }
+        const match = key.match(/(\d+)k_\d+k/);
+        if (match) {
+          return match[1]; // просто начальное значение
+        }
+        return key;
+      });
+    }
+
+    function renderChart() {
+      const data = filterData();
+
+      // Средние значения по всем строкам (average)
+      const baseResumes = {};
+      const baseVacancies = {};
+      const baseRanges = new Set();
+
+      data.forEach(record => {
+        const resumes = parseSalaryData(record.resumes_pct_json);
+        const vacancies = parseSalaryData(record.vacancies_pct_json);
+        Object.keys(resumes).forEach(k => baseRanges.add(k));
+        Object.keys(vacancies).forEach(k => baseRanges.add(k));
+      });
+
+      const sortedBase = Array.from(baseRanges).sort((a, b) => {
+        const order = ['less_5k', ...Array.from({length: 200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
+        return order.indexOf(a) - order.indexOf(b);
+      });
+
+      sortedBase.forEach(range => {
+        let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
+        data.forEach(rec => {
+          if (rec.resumes_pct_json && rec.resumes_pct_json[range] !== undefined) {
+            rSum += rec.resumes_pct_json[range];
+            rCnt++;
+          }
+          if (rec.vacancies_pct_json && rec.vacancies_pct_json[range] !== undefined) {
+            vSum += rec.vacancies_pct_json[range];
+            vCnt++;
+          }
+        });
+        baseResumes[range] = rCnt ? rSum / rCnt : 0;
+        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
+      });
+
+      const step = parseInt(document.getElementById('stepFilter').value) || 20;
+
+      const aggResumes = aggregateData(baseResumes, step);
+      const aggVacancies = aggregateData(baseVacancies, step);
+      const rawLabels = Object.keys(aggResumes);
+      const niceLabels = formatLabels(rawLabels, step);
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: niceLabels,
+          datasets: [
+            {
+              label: 'Резюме %',
+              data: Object.values(aggResumes),
+              type: 'line',
+              borderColor: 'rgba(54,162,235,0.9)',
+              backgroundColor: 'rgba(54,162,235,0.1)',
+              tension: 0.2,
+              fill: true,
+              pointRadius: 3,
+              borderWidth: 3,
+              order: 1
+            },
+            {
+              label: 'Вакансии %',
+              data: Object.values(aggVacancies),
+              type: 'bar',
+              backgroundColor: 'rgba(255,99,132,0.6)',
+              borderColor: 'rgba(255,99,132,1)',
+              borderWidth: 1,
+              barThickness: 30,
+              order: 2
+            }
+          ]
+        },
+        options: {
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 } },
+            y: { beginAtZero: true, suggestedMax: 100 }
+          },
+          interaction: { mode: 'index', intersect: false },
+          responsive: false,
+          maintainAspectRatio: false
+        }
+      });
+    }
+
+    async function loadData() {
+      const res = await fetch('/api/analytics?limit=1000');
+      if (!res.ok) {
+        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
+        return;
+      }
+      allData = await res.json();
+      fillFilters(allData);
+      renderChart();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
+        document.getElementById(id).addEventListener('change', renderChart);
+      });
+      loadData();
+    });
+  </script>
+</body>
+</html><!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Site Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto;padding:0 12px}#chart{height:400px}</style>
 </head>
 <body>
