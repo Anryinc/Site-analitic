@@ -12,7 +12,7 @@
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px; border-radius: 6px; border: 1px solid #ccc; }
-    #chart-container { position: relative; width: 100%; max-width: 1000px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; } /* <-- Здесь меняй max-width для ширины графика */
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
@@ -289,7 +289,7 @@
           xMax: endIdx,
           yMin: 0,
           yMax: 'max',
-          backgroundColor: grades[i].color + '2A', // 10% opacity
+          backgroundColor: grades[i].color + '2A', // 10% opacity, change '1A' to '0A' or '05' for less
           borderWidth: 0
         });
       }
@@ -330,7 +330,7 @@
           plugins: { legend: { position: 'top' }, annotation: { annotations } },
           scales: { 
             x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
-            y: { beginAtZero: true } 
+            y: { beginAtZero: true, ticks: { display: false } }  /* <-- Здесь убраны метки на Y */
           },
           interaction: { mode: 'index', intersect: false },
           responsive: true,
