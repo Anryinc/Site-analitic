@@ -198,8 +198,8 @@
       const lower = Math.floor(index);
       const upper = lower + 1;
       const weight = index % 1;
-      if (upper >= arr.length) return arr[lower];
-      return arr[lower] * (1 - weight) + arr[upper] * weight;
+      if (upper >= arr.length) return Math.round(arr[lower]);
+      return Math.round(arr[lower] * (1 - weight) + arr[upper] * weight);
     }
 
     function calculateMedians() {
@@ -330,11 +330,11 @@
         if (endIdx === -1) endIdx = currentLabels.length - 1;
         annotations.push({
           type: 'box',
-          xMin: startIdx - 0.3, // Adjust offset here if needed (e.g., -0.5 or 0)
-          xMax: endIdx + 0.3, // Adjust offset here if needed (e.g., 0.5 or 0)
+          xMin: startIdx - 0.3,
+          xMax: endIdx + 0.3,
           yMin: 0,
           yMax: 'max',
-          backgroundColor: grades[i].color + '0D', // Changed to ~5% opacity, adjust '0D' to '05' for less, '1A' for more
+          backgroundColor: grades[i].color + '2A',
           borderWidth: 0
         });
       }
@@ -375,7 +375,7 @@
           plugins: { legend: { position: 'top' }, annotation: { annotations } },
           scales: { 
             x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
-            y: { beginAtZero: true, ticks: { display: false } } // No Y labels
+            y: { beginAtZero: true, ticks: { display: false } }
           },
           interaction: { mode: 'index', intersect: false },
           responsive: true,
@@ -424,8 +424,8 @@
 
             // Limits
             const prevValue = i > 0 ? grades[i-1].value : 0;
-            const nextValue = i < grades.length - 1 ? grades[i+1].value : 1000;
-            newValue = Math.max(prevValue + currentStep, Math.min(nextValue - currentStep, newValue));
+            const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
+            newValue = Math.max(prevValue, Math.min(nextValue, newValue));
 
             g.value = newValue;
             line.style.left = `${(g.value / 1000) * containerWidth}px`;
