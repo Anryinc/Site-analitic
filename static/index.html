@@ -12,16 +12,17 @@
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px; border-radius: 6px; border: 1px solid #ccc; }
-    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; } /* <-- Здесь меняй max-width для ширины графика */
+    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
-    #grades { display: flex; justify-content: space-around; margin-top: 20px; }
-    .grade-box { text-align: center; padding: 10px; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 18%; }
-    .grade-box h3 { margin: 0; color: #333; }
-    .grade-box p { margin: 5px 0; color: #555; }
+    #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
+    #grades-table th { background: #f2f2f2; }
+    #grades-table .button-cell { text-align: left; }
+    button { padding: 5px 10px; margin: 0 5px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -47,13 +48,20 @@
     <div id="ruler"></div>
   </div>
 
-  <div id="grades"></div>
+  <table id="grades-table"></table>
 
   <script>
     let allData = [];
     let chartInstance = null;
-    let currentStep = 20;
-    let currentLabels = [];
+    let subLevel = 1; // Current number of subgrades (1-5)
+
+    const subPercentiles = {
+      1: [50],
+      2: [30, 70],
+      3: [20, 50, 80],
+      4: [15, 35, 65, 85],
+      5: [10, 30, 50, 70, 90]
+    };
 
     // Грейды и их цвета, включая финальную "End"
     const grades = [
@@ -183,46 +191,83 @@
       return { low: lStr, high: hStr };
     }
 
+    function percentile(arr, p) {
+      arr = arr.filter(v => v != null).sort((a, b) => a - b);
+      if (arr.length === 0) return 'N/A';
+      const index = (p / 100) * (arr.length - 1);
+      const lower = Math.floor(index);
+      const upper = lower + 1;
+      const weight = index % 1;
+      if (upper >= arr.length) return arr[lower];
+      return arr[lower] * (1 - weight) + arr[upper] * weight;
+    }
+
     function calculateMedians() {
       const data = filterData();
       if (data.length === 0) return;
 
-      const output = document.getElementById('grades');
-      output.innerHTML = '';
+      const table = document.getElementById('grades-table');
+      table.innerHTML = '';
 
-      for (let i = 0; i < grades.length - 1; i++) {
-        const start = grades[i].value;
-        const end = grades[i+1].value;
+      // Header
+      const header = table.insertRow();
+      header.insertCell().textContent = '';
+      grades.slice(0, -1).forEach(g => {
+        const th = header.insertCell();
+        th.textContent = g.name;
+      });
 
-        const percentiles = [];
-        data.forEach(rec => {
-          ['res_percentiles_json', 'vac_percentiles_json'].forEach(field => {
-            const json = parseSalaryData(rec[field]);
-            for (const key in json) {
-              const { low, high } = getRangeForKey(key);
-              if (high <= start || low >= end) continue;
-              json[key].filter(v => v !== null).forEach(v => percentiles.push(v));
-            }
+      // Subgrade rows
+      const percs = subPercentiles[subLevel];
+      for (let j = 0; j < subLevel; j++) {
+        const row = table.insertRow();
+        row.insertCell().textContent = `Субгрейд ${j + 1}`;
+        for (let i = 0; i < grades.length - 1; i++) {
+          const start = grades[i].value;
+          const end = grades[i+1].value;
+
+          const percentiles = [];
+          data.forEach(rec => {
+            ['res_percentiles_json', 'vac_percentiles_json'].forEach(field => {
+              const json = parseSalaryData(rec[field]);
+              for (const key in json) {
+                const { low, high } = getRangeForKey(key);
+                if (high <= start || low >= end) continue;
+                json[key].filter(v => v !== null).forEach(v => percentiles.push(v));
+              }
+            });
           });
-        });
 
-        const med = percentiles.length ? median(percentiles) : 'N/A';
-
-        const box = document.createElement('div');
-        box.className = 'grade-box';
-        box.innerHTML = `
-          <h3>${grades[i].name}</h3>
-          <p>Медиана: ${med}</p>
-        `;
-        output.appendChild(box);
+          const val = percentiles.length ? percentile(percentiles, percs[j]) : 'N/A';
+          row.insertCell().textContent = val;
+        }
       }
-    }
 
-    function median(arr) {
-      arr = arr.filter(v => v != null).sort((a, b) => a - b);
-      if (arr.length === 0) return 'N/A';
-      const mid = Math.floor(arr.length / 2);
-      return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
+      // Button row
+      const buttonRow = table.insertRow();
+      const buttonCell = buttonRow.insertCell();
+      buttonCell.colSpan = grades.length;
+      buttonCell.className = 'button-cell';
+
+      if (subLevel < 5) {
+        const addBtn = document.createElement('button');
+        addBtn.textContent = '+ добавить субгрейд';
+        addBtn.onclick = () => {
+          subLevel++;
+          calculateMedians();
+        };
+        buttonCell.appendChild(addBtn);
+      }
+
+      if (subLevel > 1) {
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = '- убрать субгрейд';
+        removeBtn.onclick = () => {
+          subLevel--;
+          calculateMedians();
+        };
+        buttonCell.appendChild(removeBtn);
+      }
     }
 
     function renderChart() {
@@ -285,11 +330,11 @@
         if (endIdx === -1) endIdx = currentLabels.length - 1;
         annotations.push({
           type: 'box',
-          xMin: startIdx,
-          xMax: endIdx,
+          xMin: startIdx - 0.3, // Adjust offset here if needed (e.g., -0.5 or 0)
+          xMax: endIdx + 0.3, // Adjust offset here if needed (e.g., 0.5 or 0)
           yMin: 0,
           yMax: 'max',
-          backgroundColor: grades[i].color + '2A', // 10% opacity, change '1A' to '0A' or '05' for less
+          backgroundColor: grades[i].color + '0D', // Changed to ~5% opacity, adjust '0D' to '05' for less, '1A' for more
           borderWidth: 0
         });
       }
@@ -330,7 +375,7 @@
           plugins: { legend: { position: 'top' }, annotation: { annotations } },
           scales: { 
             x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
-            y: { beginAtZero: true, ticks: { display: false } }  /* <-- Здесь убраны метки на Y */
+            y: { beginAtZero: true, ticks: { display: false } } // No Y labels
           },
           interaction: { mode: 'index', intersect: false },
           responsive: true,
@@ -350,7 +395,7 @@
         ruler.appendChild(tick);
       });
 
-      // Lines (update if exist, create if not)
+      // Lines
       const container = document.getElementById('chart-container');
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
