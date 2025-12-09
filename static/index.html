@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Зарплатный анализ по грейдам</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 0 12px; background: #f9f9fb; }
     h1 { text-align: center; color: #333; }
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px; border-radius: 6px; border: 1px solid #ccc; }
-    #chart-container { position: relative; width: 100%; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+    #chart-container { position: relative; width: 100%; max-width: 1000px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
@@ -51,6 +52,8 @@
   <script>
     let allData = [];
     let chartInstance = null;
+    let currentStep = 20;
+    let currentLabels = [];
 
     // Грейды и их цвета, включая финальную "End"
     const grades = [
@@ -173,167 +176,11 @@
       });
     }
 
-    function renderChart() {
-      const data = filterData();
-
-      const baseResumes = {};
-      const baseVacancies = {};
-      const baseRanges = new Set();
-
-      data.forEach(record => {
-        const resumes = parseSalaryData(record.resumes_pct_json);
-        const vacancies = parseSalaryData(record.vacancies_pct_json);
-        Object.keys(resumes).forEach(k => baseRanges.add(k));
-        Object.keys(vacancies).forEach(k => baseRanges.add(k));
-      });
-
-      const sortedBase = Array.from(baseRanges).sort((a, b) => {
-        const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
-        return order.indexOf(a) - order.indexOf(b);
-      });
-
-      sortedBase.forEach(range => {
-        let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
-        data.forEach(rec => {
-          if (rec.resumes_pct_json && rec.resumes_pct_json[range] !== undefined) {
-            rSum += rec.resumes_pct_json[range];
-            rCnt++;
-          }
-          if (rec.vacancies_pct_json && rec.vacancies_pct_json[range] !== undefined) {
-            vSum += rec.vacancies_pct_json[range];
-            vCnt++;
-          }
-        });
-        baseResumes[range] = rCnt ? rSum / rCnt : 0;
-        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
-      });
-
-      const step = parseInt(document.getElementById('stepFilter').value) || 20;
-
-      const aggResumes = aggregateData(baseResumes, step);
-      const aggVacancies = aggregateData(baseVacancies, step);
-      const rawLabels = Object.keys(aggResumes);
-      const niceLabels = formatLabels(rawLabels, step);
-
-      // Sort grades by value to ensure order
-      grades.sort((a, b) => a.value - b.value);
-
-      // Annotations for fills
-      const annotations = [];
-      for (let i = 0; i < grades.length - 1; i++) {
-        const startIdx = niceLabels.findIndex(l => parseInt(l) >= grades[i].value || l === 'выше 1000' || l.startsWith('до'));
-        const endIdx = niceLabels.findIndex(l => parseInt(l) >= grades[i+1].value || l === 'выше 1000' || l.startsWith('до'));
-        annotations.push({
-          type: 'box',
-          xMin: startIdx,
-          xMax: endIdx,
-          yMin: 0,
-          yMax: 'max',
-          backgroundColor: grades[i].color + '1A', // 10% opacity
-          borderWidth: 0
-        });
-      }
-
-      const ctx = document.getElementById('chart').getContext('2d');
-      if (chartInstance) chartInstance.destroy();
-
-      chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: niceLabels,
-          datasets: [
-            {
-              label: 'Резюме %',
-              data: Object.values(aggResumes),
-              type: 'line',
-              borderColor: 'rgba(54,162,235,0.9)',
-              backgroundColor: 'rgba(54,162,235,0.1)',
-              tension: 0.2,
-              fill: true,
-              pointRadius: 1,
-              borderWidth: 1,
-              order: 1
-            },
-            {
-              label: 'Вакансии %',
-              data: Object.values(aggVacancies),
-              type: 'bar',
-              backgroundColor: 'rgba(255,99,132,0.6)',
-              borderColor: 'rgba(255,99,132,1)',
-              borderWidth: 1,
-              barThickness: 10,
-              order: 2
-            }
-          ]
-        },
-        options: {
-          plugins: { legend: { position: 'top' }, annotation: { annotations } },
-          scales: { 
-            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
-            y: { beginAtZero: true } 
-          },
-          interaction: { mode: 'index', intersect: false },
-          responsive: true,
-          maintainAspectRatio: false
-        }
-      });
-
-      // Ruler ticks
-      const ruler = document.getElementById('ruler');
-      ruler.innerHTML = '';
-      const containerWidth = document.getElementById('chart-container').clientWidth;
-      niceLabels.forEach((label, i) => {
-        const tick = document.createElement('div');
-        tick.className = 'ruler-tick';
-        tick.style.left = `${(i / (niceLabels.length - 1)) * 100}%`;
-        tick.textContent = label;
-        ruler.appendChild(tick);
-      });
-
-      // Lines
-      const container = document.getElementById('chart-container');
-      grades.forEach((g, i) => {
-        const line = document.createElement('div');
-        line.className = 'grade-line';
-        line.style.backgroundColor = g.color;
-        line.dataset.index = i;
-
-        const label = document.createElement('div');
-        label.className = 'grade-label';
-        label.textContent = g.name;
-        line.appendChild(label);
-
-        container.appendChild(line);
-
-        const percent = g.value / 1000;
-        line.style.left = `${percent * containerWidth}px`;
-
-        // Drag with limits
-        let dragging = false;
-        line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
-        document.addEventListener('mousemove', e => {
-          if (!dragging) return;
-          const rect = container.getBoundingClientRect();
-          let newX = e.clientX - rect.left;
-          newX = Math.max(0, Math.min(containerWidth, newX));
-          let newValue = Math.round((newX / containerWidth) * 1000 / step) * step;
-
-          // Limits
-          const prevValue = i > 0 ? grades[i-1].value : 0;
-          const nextValue = i < grades.length - 1 ? grades[i+1].value : 1000;
-          newValue = Math.max(prevValue + step, Math.min(nextValue - step, newValue));
-
-          g.value = newValue;
-          line.style.left = `${newX}px`;
-        });
-        document.addEventListener('mouseup', () => {
-          if (dragging) {
-            dragging = false;
-            renderChart();
-            calculateMedians();
-          }
-        });
-      });
+    function getRangeForKey(key) {
+      if (key === 'less_5k') return { low: 0, high: 5 };
+      if (key === 'more_1000k') return { low: 1000, high: Infinity };
+      const [lStr, hStr] = key.split('_').map(x => parseInt(x.replace('k','')));
+      return { low: lStr, high: hStr };
     }
 
     function calculateMedians() {
@@ -371,13 +218,6 @@
       }
     }
 
-    function getRangeForKey(key) {
-      if (key === 'less_5k') return { low: 0, high: 5 };
-      if (key === 'more_1000k') return { low: 1000, high: Infinity };
-      const [lStr, hStr] = key.split('_').map(x => parseInt(x.replace('k','')));
-      return { low: lStr, high: hStr };
-    }
-
     function median(arr) {
       arr = arr.filter(v => v != null).sort((a, b) => a - b);
       if (arr.length === 0) return 'N/A';
@@ -385,9 +225,184 @@
       return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
     }
 
+    function renderChart() {
+      const data = filterData();
+
+      const baseResumes = {};
+      const baseVacancies = {};
+      const baseRanges = new Set();
+
+      data.forEach(record => {
+        const resumes = parseSalaryData(record.resumes_pct_json);
+        const vacancies = parseSalaryData(record.vacancies_pct_json);
+        Object.keys(resumes).forEach(k => baseRanges.add(k));
+        Object.keys(vacancies).forEach(k => baseRanges.add(k));
+      });
+
+      const sortedBase = Array.from(baseRanges).sort((a, b) => {
+        const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
+        return order.indexOf(a) - order.indexOf(b);
+      });
+
+      sortedBase.forEach(range => {
+        let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
+        data.forEach(rec => {
+          if (rec.resumes_pct_json && rec.resumes_pct_json[range] !== undefined) {
+            rSum += rec.resumes_pct_json[range];
+            rCnt++;
+          }
+          if (rec.vacancies_pct_json && rec.vacancies_pct_json[range] !== undefined) {
+            vSum += rec.vacancies_pct_json[range];
+            vCnt++;
+          }
+        });
+        baseResumes[range] = rCnt ? rSum / rCnt : 0;
+        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
+      });
+
+      currentStep = parseInt(document.getElementById('stepFilter').value) || 20;
+
+      const aggResumes = aggregateData(baseResumes, currentStep);
+      const aggVacancies = aggregateData(baseVacancies, currentStep);
+      const rawLabels = Object.keys(aggResumes);
+      currentLabels = formatLabels(rawLabels, currentStep);
+
+      // Sort grades to prevent crossing
+      grades.sort((a, b) => a.value - b.value);
+
+      // Annotations for fills (using grade colors)
+      const annotations = [];
+      for (let i = 0; i < grades.length - 1; i++) {
+        let startIdx = currentLabels.findIndex(l => {
+          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
+          return val >= grades[i].value;
+        });
+        let endIdx = currentLabels.findIndex(l => {
+          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
+          return val >= grades[i+1].value;
+        });
+        if (startIdx === -1) startIdx = 0;
+        if (endIdx === -1) endIdx = currentLabels.length - 1;
+        annotations.push({
+          type: 'box',
+          xMin: startIdx,
+          xMax: endIdx,
+          yMin: 0,
+          yMax: 'max',
+          backgroundColor: grades[i].color + '1A', // 10% opacity
+          borderWidth: 0
+        });
+      }
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: currentLabels,
+          datasets: [
+            {
+              label: 'Резюме %',
+              data: Object.values(aggResumes),
+              type: 'line',
+              borderColor: 'rgba(54,162,235,0.9)',
+              backgroundColor: 'rgba(54,162,235,0.1)',
+              tension: 0.2,
+              fill: true,
+              pointRadius: 1,
+              borderWidth: 1,
+              order: 1
+            },
+            {
+              label: 'Вакансии %',
+              data: Object.values(aggVacancies),
+              type: 'bar',
+              backgroundColor: 'rgba(255,99,132,0.6)',
+              borderColor: 'rgba(255,99,132,1)',
+              borderWidth: 1,
+              barThickness: 10,
+              order: 2
+            }
+          ]
+        },
+        options: {
+          plugins: { legend: { position: 'top' }, annotation: { annotations } },
+          scales: { 
+            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
+            y: { beginAtZero: true } 
+          },
+          interaction: { mode: 'index', intersect: false },
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+
+      // Ruler
+      const ruler = document.getElementById('ruler');
+      ruler.innerHTML = '';
+      const containerWidth = document.getElementById('chart-container').clientWidth;
+      currentLabels.forEach((label, i) => {
+        const tick = document.createElement('div');
+        tick.className = 'ruler-tick';
+        tick.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
+        tick.textContent = label;
+        ruler.appendChild(tick);
+      });
+
+      // Lines (update if exist, create if not)
+      const container = document.getElementById('chart-container');
+      grades.forEach((g, i) => {
+        let line = document.getElementById(`grade-line-${g.name}`);
+        if (!line) {
+          line = document.createElement('div');
+          line.id = `grade-line-${g.name}`;
+          line.className = 'grade-line';
+          line.style.backgroundColor = g.color;
+          line.dataset.index = i;
+
+          const label = document.createElement('div');
+          label.className = 'grade-label';
+          label.textContent = g.name;
+          line.appendChild(label);
+
+          container.appendChild(line);
+
+          let dragging = false;
+          line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+          document.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            const rect = container.getBoundingClientRect();
+            let newX = e.clientX - rect.left;
+            newX = Math.max(0, Math.min(containerWidth, newX));
+            let newValue = Math.round((newX / containerWidth) * 1000 / currentStep) * currentStep;
+
+            // Limits
+            const prevValue = i > 0 ? grades[i-1].value : 0;
+            const nextValue = i < grades.length - 1 ? grades[i+1].value : 1000;
+            newValue = Math.max(prevValue + currentStep, Math.min(nextValue - currentStep, newValue));
+
+            g.value = newValue;
+            line.style.left = `${(g.value / 1000) * containerWidth}px`;
+          });
+          document.addEventListener('mouseup', () => {
+            if (dragging) {
+              dragging = false;
+              renderChart();
+              calculateMedians();
+            }
+          });
+        }
+        line.style.left = `${(g.value / 1000) * containerWidth}px`;
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
-        document.getElementById(id).addEventListener('change', renderChart);
+        document.getElementById(id).addEventListener('change', () => {
+          renderChart();
+          calculateMedians();
+        });
       });
       loadData();
     });
