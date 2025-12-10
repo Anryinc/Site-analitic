@@ -23,9 +23,14 @@
     #grades-table th { background: #f2f2f2; }
     #grades-table .button-cell { text-align: left; }
     button { padding: 5px 10px; margin: 0 5px; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .tooltip { position: relative; display: inline-block; }
+    .tooltip .tooltiptext { visibility: hidden; width: 200px; background-color: black; color: #fff; text-align: center; border-radius: 6px; padding: 5px 0; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s; }
+    .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
   </style>
 </head>
 <body>
+  <button id="saveBtn" style="margin: 10px auto; display: block;">Сохранить позиции</button>
   <h1>Зарплатный анализ по грейдам</h1>
   <p style="text-align:center;color:#555;">Перетаскивайте цветные линии, чтобы задать границы грейдов</p>
 
@@ -53,7 +58,8 @@
   <script>
     let allData = [];
     let chartInstance = null;
-    let subLevel = 1; // Current number of subgrades (1-5)
+    let subLevel = 1;
+    let marketPercentile = 50; // Default
 
     const subPercentiles = {
       1: [50],
@@ -63,7 +69,7 @@
       5: [10, 30, 50, 70, 90]
     };
 
-    // Грейды и их цвета, включая финальную "End"
+    // Грейды
     const grades = [
       { name: "Intern", color: "#FF9800", value: 60 },
       { name: "Junior", color: "#4CAF50", value: 140 },
@@ -89,9 +95,17 @@
         return;
       }
       allData = await res.json();
+      const vacancy = document.getElementById('vacancyFilter').value;
+      const row = allData.find(r => r.vacancy_category === vacancy);
+      if (row && row.grades_positions) {
+        Object.keys(row.grades_positions).forEach(key => {
+          const g = grades.find(gg => gg.name.toLowerCase() === key);
+          if (g) g.value = row.grades_positions[key];
+        });
+      }
       fillFilters(allData);
       renderChart();
-      calculateMedians(); // Добавили вызов здесь для инициализации таблицы
+      calculateMedians();
     }
 
     function fillFilters(data) {
@@ -462,7 +476,7 @@
         if (result.success) {
           alert('Позиции сохранены!');
         } else {
-          alert('Ошибка сохранения');
+          alert('Ошибка сохранения: ' + result.detail);
         }
       } catch (e) {
         alert('Ошибка: ' + e);
