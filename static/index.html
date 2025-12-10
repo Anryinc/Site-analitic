@@ -91,6 +91,7 @@
       allData = await res.json();
       fillFilters(allData);
       renderChart();
+      calculateMedians(); // Добавили вызов здесь для инициализации таблицы
     }
 
     function fillFilters(data) {
@@ -277,70 +278,6 @@
       const baseVacancies = {};
       const baseRanges = new Set();
 
-// Добавь кнопку "Сохранить"
-document.body.insertAdjacentHTML('afterbegin', '<button id="saveBtn" style="margin: 10px auto; display: block;">Сохранить позиции</button>');
-
-document.getElementById('saveBtn').addEventListener('click', async () => {
-  const vacancy = document.getElementById('vacancyFilter').value;
-  const positions = {};
-  grades.forEach(g => {
-    positions[g.name.toLowerCase()] = g.value;
-  });
-  try {
-    const res = await fetch('/api/save_positions', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ vacancy_category: vacancy, positions })
-    });
-    if (res.ok) alert('Позиции сохранены!');
-    else alert('Ошибка сохранения');
-  } catch (e) {
-    alert('Ошибка: ' + e);
-  }
-});
-
-// При загрузке данных - загрузка позиций из allData
-async function loadData() {
-  // ... (остальной loadData)
-  allData = await res.json();
-  const vacancy = document.getElementById('vacancyFilter').value;
-  const row = allData.find(r => r.vacancy_category === vacancy);
-  if (row && row.grades_positions) {
-    Object.keys(row.grades_positions).forEach(key => {
-      const g = grades.find(gg => gg.name.toLowerCase() === key);
-      if (g) g.value = row.grades_positions[key];
-    });
-  }
-  fillFilters(allData);
-  renderChart();
-}
-
-// Слушатель смены вакансии - reload positions
-document.getElementById('vacancyFilter').addEventListener('change', () => {
-  const vacancy = document.getElementById('vacancyFilter').value;
-  const row = allData.find(r => r.vacancy_category === vacancy);
-  if (row && row.grades_positions) {
-    Object.keys(row.grades_positions).forEach(key => {
-      const g = grades.find(gg => gg.name.toLowerCase() === key);
-      if (g) g.value = row.grades_positions[key];
-    });
-  } else {
-    // Default if no saved
-    grades[0].value = 60;
-    grades[1].value = 140;
-    grades[2].value = 280;
-    grades[3].value = 500;
-    grades[4].value = 800;
-    grades[5].value = 900;
-  }
-  renderChart();
-  calculateMedians();
-});
-
-
-
-
-      
       data.forEach(record => {
         const resumes = parseSalaryData(record.resumes_pct_json);
         const vacancies = parseSalaryData(record.vacancies_pct_json);
