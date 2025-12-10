@@ -27,7 +27,7 @@
     button:hover { background: #1976D2; }
     button:disabled { background: #aaa; cursor: not-allowed; }
     .tooltip { position: relative; display: inline-block; }
-    .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 100; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
+    .tooltip .tooltiptext { visibility: hidden; width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 100; bottom: 130%; left: 50%; margin-left: -125px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
   </style>
 </head>
@@ -35,23 +35,25 @@
   <div class="top-controls">
     <button id="saveBtn">Сохранить позиции грейдов</button>
 
-    <label class="tooltip">
-      Ориентация по рынку:
-      <select id="percentileSelect">
-        <option value="5">5-й</option>
-        <option value="10">10-й</option>
-        <option value="20">20-й</option>
-        <option value="30">30-й</option>
-        <option value="40">40-й</option>
-        <option value="50" selected>50-й (медиана)</option>
-        <option value="60">60-й</option>
-        <option value="70">70-й</option>
-        <option value="80">80-й</option>
-        <option value="90">90-й</option>
-        <option value="95">95-й</option>
-      </select>
-      <span class="tooltiptext" id="percentileTooltip">доступно только при 1 субгрейде и 50-м перцентиле</span>
-    </label>
+    <div class="tooltip">
+      <label>
+        Ориентация по рынку:
+        <select id="percentileSelect">
+          <option value="5">5-й</option>
+          <option value="10">10-й</option>
+          <option value="20">20-й</option>
+          <option value="30">30-й</option>
+          <option value="40">40-й</option>
+          <option value="50" selected>50-й (медиана)</option>
+          <option value="60">60-й</option>
+          <option value="70">70-й</option>
+          <option value="80">80-й</option>
+          <option value="90">90-й</option>
+          <option value="95">95-й</option>
+        </select>
+      </label>
+      <span class="tooltiptext" id="percentileTooltip"></span>
+    </div>
   </div>
 
   <h1>Зарплатный анализ по грейдам</h1>
@@ -61,7 +63,7 @@
     <label>Вакансия: <select id="vacancyFilter"></select></label>
     <label>Город: <select id="cityFilter"><option value="">Все</option></select></label>
     <label>Квартал: <select id="quarterFilter"></select></label>
-    <label>Шаг ЗП: 
+    <label>Шаг ЗП:
       <select id="stepFilter">
         <option value="5">5 тыс</option>
         <option value="10">10 тыс</option>
@@ -83,6 +85,8 @@
     let chartInstance = null;
     let subLevel = 1;
     let marketPercentile = 50;
+    let currentStep = 20;
+    let currentLabels = [];
 
     const subPercentiles = {
       1: [50],
@@ -101,16 +105,13 @@
       { name: "End", color: "#000000", value: 900 }
     ];
 
-    // === Кнопка "Сохранить" создаётся только один раз ===
-    const saveBtn = document.getElementById('saveBtn');
-    saveBtn.addEventListener('click', async () => {
+    // КНОПКА СОХРАНЕНИЯ (одна!)
+    document.getElementById('saveBtn').addEventListener('click', async () => {
       const vacancy = document.getElementById('vacancyFilter').value;
       if (!vacancy) return alert('Выберите вакансию');
 
       const positions = {};
-      grades.forEach(g => {
-        positions[g.name.toLowerCase()] = g.value;
-      });
+      grades.forEach(g => positions[g.name.toLowerCase()] = g.value);
 
       try {
         const res = await fetch('/api/save_positions', {
@@ -120,101 +121,94 @@
         });
 
         if (res.ok || res.status === 204) {
-          alert('Позиции успешно сохранены в базу!');
+          alert('Позиции успешно сохранены!');
         } else {
-          const text = await res.text();
-          alert('Ошибка сохранения: ' + text);
+          const txt = await res.text();
+          alert('Ошибка сохранения: ' + txt);
         }
       } catch (e) {
-        alert('Сетевая ошибка: ' + e.message);
+        alert('Сетевая ошибка: ' + e);
       }
     });
 
-    // === Dropdown перцентиля + логика блокировки ===
+    // PERCENTILE SELECT + БЛОКИРОВКА
     const percentileSelect = document.getElementById('percentileSelect');
-    const addSubgradeButtons = () => document.querySelectorAll('button:contains("+")'));
+    const percentileTooltip = document.getElementById('percentileTooltip');
 
     function updatePercentileState() {
-      const isSingleSub = subLevel === 1;
+      const isSingle = subLevel === 1;
       const isMedian = marketPercentile === 50;
 
-      percentileSelect.disabled = !isSingleSub;
-      document.getElementById('percentileTooltip').textContent = 
-        isSingleSub 
-          ? (isMedian ? "" : "доступно только при выставлении ориентации по рынку на 50") 
-          : "доступно только при 1 субгрейде";
+      percentileSelect.disabled = !isSingle;
+      percentileTooltip.textContent = isSingle
+        ? (isMedian ? '' : 'доступно только при 50-м перцентиле')
+        : 'доступно только при 1 субгрейде';
 
-      // Блокировка кнопки "+ добавить субгрейд" если не 50-й
-      document.querySelectorAll('button').forEach(btn => {
-        if (btn.textContent.includes('+ добавить субгрейд')) {
-          btn.disabled = !isMedian;
+      // Блокировка кнопки "+"
+      document.querySelectorAll('button').forEach(b => {
+        if (b.textContent.includes('+ добавить субгрейд')) {
+          b.disabled = !isMedian;
         }
       });
     }
 
     percentileSelect.addEventListener('change', () => {
-      marketPercentile = parseInt(percentileSelect.value);
+      marketPercentile = +percentileSelect.value;
       updatePercentileState();
       calculateMedians();
     });
 
+    // === ВСЁ ОСТАЛЬНОЕ (loadData, renderChart, calculateMedians и т.д.) ===
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
       if (isNaN(d)) return '';
       const year = d.getFullYear();
-      const month = d.getMonth();
-      const q = Math.floor(month / 3) + 1;
+      const q = Math.floor(d.getMonth() / 3) + 1;
       return `${year} Q${q}`;
     }
 
     async function loadData() {
       const res = await fetch('/api/analytics?limit=1000');
       if (!res.ok) {
-        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
+        document.body.innerHTML += `<p style="color:red">Ошибка загрузки данных</p>`;
         return;
       }
       allData = await res.json();
-      const vacancy = document.getElementById('vacancyFilter').value;
-      const row = allData.find(r => r.vacancy_category === vacancy);
-      if (row && row.grades_positions) {
-        Object.keys(row.grades_positions).forEach(key => {
-          const g = grades.find(gg => gg.name.toLowerCase() === key);
-          if (g) g.value = row.grades_positions[key];
+
+      // Загружаем сохранённые позиции для текущей вакансии
+      const currentVacancy = document.getElementById('vacancyFilter').value || allData[0]?.vacancy_category;
+      const saved = allData.find(r => r.vacancy_category === currentVacancy);
+      if (saved?.grades_positions) {
+        Object.entries(saved.grades_positions).forEach(([k, v]) => {
+          const g = grades.find(g => g.name.toLowerCase() === k);
+          if (g) g.value = v;
         });
       }
+
       fillFilters(allData);
       renderChart();
       calculateMedians();
+      updatePercentileState();
     }
 
     function fillFilters(data) {
-      const vacancySet = new Set();
-      const citySet = new Set();
-      const quarterSet = new Set();
-      for (const r of data) {
+      const vacancySet = new Set(), citySet = new Set(), quarterSet = new Set();
+      data.forEach(r => {
         if (r.vacancy_category) vacancySet.add(r.vacancy_category);
         if (r.city && r.city !== 'Все города') citySet.add(r.city);
         if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
-      }
-
-      const vacancyFilter = document.getElementById('vacancyFilter');
-      const cityFilter = document.getElementById('cityFilter');
-      const quarterFilter = document.getElementById('quarterFilter');
-
-      const sortedVacancies = Array.from(vacancySet).sort();
-      vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
-      if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
-
-      const sortedCities = Array.from(citySet).sort();
-      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
-
-      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
-        const [yA, qA] = a.split(' Q');
-        const [yB, qB] = b.split(' Q');
-        return (yB - yA) || (qB - qA);
       });
-      quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
-      if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
+
+      const vSel = document.getElementById('vacancyFilter');
+      vSel.innerHTML = [...vacancySet].sort().map(v => `<option value="${v}">${v}</option>`).join('');
+      if (!vSel.value && vacancySet.size) vSel.value = [...vacancySet][0];
+
+      document.getElementById('cityFilter').innerHTML = '<option value="">Все</option>' +
+        [...citySet].sort().map(v => `<option value="${v}">${v}</option>`).join('');
+
+      const quarters = [...quarterSet].sort((a,b) => b.localeCompare(a));
+      document.getElementById('quarterFilter').innerHTML = quarters.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (quarters.length) document.getElementById('quarterFilter').value = quarters[0];
     }
 
     function parseSalaryData(jsonField) {
@@ -583,7 +577,6 @@
     });
 
 window.addEventListener('DOMContentLoaded', () => {
-      // Навешиваем обработчики
       ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => {
           renderChart();
@@ -591,8 +584,22 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       });
 
-      // Инициализация состояния перцентиля
-      updatePercentileState();
+      // При смене вакансии — перезагружаем позиции
+      document.getElementById('vacancyFilter').addEventListener('change', () => {
+        const vacancy = document.getElementById('vacancyFilter').value;
+        const row = allData.find(r => r.vacancy_category === vacancy);
+        if (row?.grades_positions) {
+          Object.entries(row.grades_positions).forEach(([k, v]) => {
+            const g = grades.find(g => g.name.toLowerCase() === k);
+            if (g) g.value = v;
+          });
+        } else {
+          // дефолт
+          grades.forEach((g, i) => g.value = [60,140,280,500,800,900][i]);
+        }
+        renderChart();
+        calculateMedians();
+      });
 
       loadData();
     });
