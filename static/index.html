@@ -17,8 +17,10 @@
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    .grade-value { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.8); color: #333; padding: 2px 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
+    .ruler-dot { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
     #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
@@ -27,14 +29,13 @@
     button:hover { background: #1976D2; }
     button:disabled { background: #aaa; cursor: not-allowed; }
     .tooltip { position: relative; display: inline-block; }
-    .tooltip .tooltiptext { visibility: hidden; width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 100; bottom: 130%; left: 50%; margin-left: -125px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
+    .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
   </style>
 </head>
 <body>
   <div class="top-controls">
     <button id="saveBtn">Сохранить позиции грейдов</button>
-
     <div class="tooltip">
       <label>
         Ориентация по рынку:
@@ -55,10 +56,8 @@
       <span class="tooltiptext" id="percentileTooltip"></span>
     </div>
   </div>
-
   <h1>Зарплатный анализ по грейдам</h1>
   <p style="text-align:center;color:#555;">Перетаскивайте цветные линии, чтобы задать границы грейдов</p>
-
   <div class="controls">
     <label>Вакансия: <select id="vacancyFilter"></select></label>
     <label>Город: <select id="cityFilter"><option value="">Все</option></select></label>
@@ -72,14 +71,11 @@
       </select>
     </label>
   </div>
-
   <div id="chart-container">
     <canvas id="chart"></canvas>
     <div id="ruler"></div>
   </div>
-
   <table id="grades-table"></table>
-
   <script>
     let allData = [];
     let chartInstance = null;
@@ -87,7 +83,6 @@
     let marketPercentile = 50;
     let currentStep = 20;
     let currentLabels = [];
-
     const subPercentiles = {
       1: [50],
       2: [30, 70],
@@ -95,7 +90,6 @@
       4: [15, 35, 65, 85],
       5: [10, 30, 50, 70, 90]
     };
-
     const grades = [
       { name: "Intern", color: "#FF9800", value: 60 },
       { name: "Junior", color: "#4CAF50", value: 140 },
@@ -104,22 +98,18 @@
       { name: "Lead", color: "#F44336", value: 800 },
       { name: "End", color: "#000000", value: 900 }
     ];
-
-    // КНОПКА СОХРАНЕНИЯ (одна!)
+    // КНОПКА СОХРАНЕНИЯ
     document.getElementById('saveBtn').addEventListener('click', async () => {
       const vacancy = document.getElementById('vacancyFilter').value;
       if (!vacancy) return alert('Выберите вакансию');
-
       const positions = {};
       grades.forEach(g => positions[g.name.toLowerCase()] = g.value);
-
       try {
         const res = await fetch('/api/save_positions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ vacancy_category: vacancy, positions })
         });
-
         if (res.ok || res.status === 204) {
           alert('Позиции успешно сохранены!');
         } else {
@@ -127,100 +117,90 @@
           alert('Ошибка сохранения: ' + txt);
         }
       } catch (e) {
-        alert('Сетевая ошибка: ' + e);
+        alert('Сетевая ошибка: ' + e.message);
       }
     });
-
     // PERCENTILE SELECT + БЛОКИРОВКА
     const percentileSelect = document.getElementById('percentileSelect');
     const percentileTooltip = document.getElementById('percentileTooltip');
-
     function updatePercentileState() {
       const isSingle = subLevel === 1;
       const isMedian = marketPercentile === 50;
-
       percentileSelect.disabled = !isSingle;
       percentileTooltip.textContent = isSingle
         ? (isMedian ? '' : 'доступно только при 50-м перцентиле')
         : 'доступно только при 1 субгрейде';
-
-      // Блокировка кнопки "+"
       document.querySelectorAll('button').forEach(b => {
         if (b.textContent.includes('+ добавить субгрейд')) {
           b.disabled = !isMedian;
         }
       });
     }
-
     percentileSelect.addEventListener('change', () => {
       marketPercentile = +percentileSelect.value;
       updatePercentileState();
       calculateMedians();
     });
-
-    // === ВСЁ ОСТАЛЬНОЕ (loadData, renderChart, calculateMedians и т.д.) ===
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
       if (isNaN(d)) return '';
       const year = d.getFullYear();
-      const q = Math.floor(d.getMonth() / 3) + 1;
+      const month = d.getMonth();
+      const q = Math.floor(month / 3) + 1;
       return `${year} Q${q}`;
     }
-
     async function loadData() {
       const res = await fetch('/api/analytics?limit=1000');
       if (!res.ok) {
-        document.body.innerHTML += `<p style="color:red">Ошибка загрузки данных</p>`;
+        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
         return;
       }
       allData = await res.json();
-
-      // Загружаем сохранённые позиции для текущей вакансии
-      const currentVacancy = document.getElementById('vacancyFilter').value || allData[0]?.vacancy_category;
-      const saved = allData.find(r => r.vacancy_category === currentVacancy);
-      if (saved?.grades_positions) {
-        Object.entries(saved.grades_positions).forEach(([k, v]) => {
-          const g = grades.find(g => g.name.toLowerCase() === k);
-          if (g) g.value = v;
+      const vacancy = document.getElementById('vacancyFilter').value;
+      const row = allData.find(r => r.vacancy_category === vacancy);
+      if (row && row.grades_positions) {
+        Object.keys(row.grades_positions).forEach(key => {
+          const g = grades.find(gg => gg.name.toLowerCase() === key);
+          if (g) g.value = row.grades_positions[key];
         });
       }
-
       fillFilters(allData);
       renderChart();
       calculateMedians();
-      updatePercentileState();
     }
-
     function fillFilters(data) {
-      const vacancySet = new Set(), citySet = new Set(), quarterSet = new Set();
-      data.forEach(r => {
+      const vacancySet = new Set();
+      const citySet = new Set();
+      const quarterSet = new Set();
+      for (const r of data) {
         if (r.vacancy_category) vacancySet.add(r.vacancy_category);
         if (r.city && r.city !== 'Все города') citySet.add(r.city);
         if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
+      }
+      const vacancyFilter = document.getElementById('vacancyFilter');
+      const cityFilter = document.getElementById('cityFilter');
+      const quarterFilter = document.getElementById('quarterFilter');
+      const sortedVacancies = Array.from(vacancySet).sort();
+      vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
+      const sortedCities = Array.from(citySet).sort();
+      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
+      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
+        const [yA, qA] = a.split(' Q');
+        const [yB, qB] = b.split(' Q');
+        return (yB - yA) || (qB - qA);
       });
-
-      const vSel = document.getElementById('vacancyFilter');
-      vSel.innerHTML = [...vacancySet].sort().map(v => `<option value="${v}">${v}</option>`).join('');
-      if (!vSel.value && vacancySet.size) vSel.value = [...vacancySet][0];
-
-      document.getElementById('cityFilter').innerHTML = '<option value="">Все</option>' +
-        [...citySet].sort().map(v => `<option value="${v}">${v}</option>`).join('');
-
-      const quarters = [...quarterSet].sort((a,b) => b.localeCompare(a));
-      document.getElementById('quarterFilter').innerHTML = quarters.map(v => `<option value="${v}">${v}</option>`).join('');
-      if (quarters.length) document.getElementById('quarterFilter').value = quarters[0];
+      quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
+      if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
     }
-
     function parseSalaryData(jsonField) {
       if (!jsonField || typeof jsonField !== 'object') return {};
       return jsonField;
     }
-
     function filterData() {
       const vacancy = document.getElementById('vacancyFilter').value;
       const city = document.getElementById('cityFilter').value;
       const quarter = document.getElementById('quarterFilter').value;
-
       return allData.filter(r => {
         const matchesVacancy = r.vacancy_category === vacancy;
         const matchesCity = city === '' ? r.city === 'Все города' : r.city === city;
@@ -228,7 +208,6 @@
         return matchesVacancy && matchesCity && matchesQuarter;
       });
     }
-
     function aggregateData(rawByRange, step) {
       const aggregated = {};
       let start = 0;
@@ -236,7 +215,6 @@
         const end = start + step;
         const key = start === 0 ? `less_${end}k` : `${start}k_${end}k`;
         let sum = 0;
-
         for (const rangeKey in rawByRange) {
           if (rangeKey === 'more_1000k') continue;
           if (rangeKey === 'less_5k') {
@@ -256,7 +234,6 @@
       aggregated['more_1000k'] = rawByRange['more_1000k'] || 0;
       return aggregated;
     }
-
     function formatLabels(aggregatedRanges, step) {
       return aggregatedRanges.map(key => {
         if (key === 'more_1000k') return `выше 1000`;
@@ -271,14 +248,12 @@
         return key;
       });
     }
-
     function getRangeForKey(key) {
       if (key === 'less_5k') return { low: 0, high: 5 };
       if (key === 'more_1000k') return { low: 1000, high: Infinity };
       const [lStr, hStr] = key.split('_').map(x => parseInt(x.replace('k','')));
       return { low: lStr, high: hStr };
     }
-
     function percentile(arr, p) {
       arr = arr.filter(v => v != null).sort((a, b) => a - b);
       if (arr.length === 0) return 'N/A';
@@ -289,14 +264,11 @@
       if (upper >= arr.length) return Math.round(arr[lower]);
       return Math.round(arr[lower] * (1 - weight) + arr[upper] * weight);
     }
-
     function calculateMedians() {
       const data = filterData();
       if (data.length === 0) return;
-
       const table = document.getElementById('grades-table');
       table.innerHTML = '';
-
       // Header
       const header = table.insertRow();
       header.insertCell().textContent = '';
@@ -304,16 +276,15 @@
         const th = header.insertCell();
         th.textContent = g.name;
       });
-
       // Subgrade rows
-      const percs = subPercentiles[subLevel];
+      let percs = subPercentiles[subLevel];
+      if (subLevel === 1) percs = [marketPercentile];  // Используем выбранный перцентиль
       for (let j = 0; j < subLevel; j++) {
         const row = table.insertRow();
         row.insertCell().textContent = `Субгрейд ${j + 1}`;
         for (let i = 0; i < grades.length - 1; i++) {
           const start = grades[i].value;
           const end = grades[i+1].value;
-
           const percentiles = [];
           data.forEach(rec => {
             ['res_percentiles_json', 'vac_percentiles_json'].forEach(field => {
@@ -325,58 +296,51 @@
               }
             });
           });
-
           const val = percentiles.length ? percentile(percentiles, percs[j]) : 'N/A';
           row.insertCell().textContent = val;
         }
       }
-
       // Button row
       const buttonRow = table.insertRow();
       const buttonCell = buttonRow.insertCell();
       buttonCell.colSpan = grades.length;
       buttonCell.className = 'button-cell';
-
       if (subLevel < 5) {
         const addBtn = document.createElement('button');
         addBtn.textContent = '+ добавить субгрейд';
         addBtn.onclick = () => {
           subLevel++;
           calculateMedians();
+          updatePercentileState();
         };
         buttonCell.appendChild(addBtn);
       }
-
       if (subLevel > 1) {
         const removeBtn = document.createElement('button');
         removeBtn.textContent = '- убрать субгрейд';
         removeBtn.onclick = () => {
           subLevel--;
           calculateMedians();
+          updatePercentileState();
         };
         buttonCell.appendChild(removeBtn);
       }
     }
-
     function renderChart() {
       const data = filterData();
-
       const baseResumes = {};
       const baseVacancies = {};
       const baseRanges = new Set();
-
       data.forEach(record => {
         const resumes = parseSalaryData(record.resumes_pct_json);
         const vacancies = parseSalaryData(record.vacancies_pct_json);
         Object.keys(resumes).forEach(k => baseRanges.add(k));
         Object.keys(vacancies).forEach(k => baseRanges.add(k));
       });
-
       const sortedBase = Array.from(baseRanges).sort((a, b) => {
         const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
         return order.indexOf(a) - order.indexOf(b);
       });
-
       sortedBase.forEach(range => {
         let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
         data.forEach(rec => {
@@ -392,17 +356,13 @@
         baseResumes[range] = rCnt ? rSum / rCnt : 0;
         baseVacancies[range] = vCnt ? vSum / vCnt : 0;
       });
-
       currentStep = parseInt(document.getElementById('stepFilter').value) || 20;
-
       const aggResumes = aggregateData(baseResumes, currentStep);
       const aggVacancies = aggregateData(baseVacancies, currentStep);
       const rawLabels = Object.keys(aggResumes);
       currentLabels = formatLabels(rawLabels, currentStep);
-
       // Sort grades to prevent crossing
       grades.sort((a, b) => a.value - b.value);
-
       // Annotations for fills (using grade colors)
       const annotations = [];
       for (let i = 0; i < grades.length - 1; i++) {
@@ -426,10 +386,8 @@
           borderWidth: 0
         });
       }
-
       const ctx = document.getElementById('chart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
-
       chartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -461,8 +419,8 @@
         },
         options: {
           plugins: { legend: { position: 'top' }, annotation: { annotations } },
-          scales: { 
-            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } },
             y: { beginAtZero: true, ticks: { display: false } }
           },
           interaction: { mode: 'index', intersect: false },
@@ -470,7 +428,6 @@
           maintainAspectRatio: false
         }
       });
-
       // Ruler
       const ruler = document.getElementById('ruler');
       ruler.innerHTML = '';
@@ -481,9 +438,12 @@
         tick.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
         tick.textContent = label;
         ruler.appendChild(tick);
+        const dot = document.createElement('div');
+        dot.className = 'ruler-dot';
+        dot.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
+        ruler.appendChild(dot);
       });
-
-      // Lines
+      // Lines with value display
       const container = document.getElementById('chart-container');
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
@@ -493,14 +453,15 @@
           line.className = 'grade-line';
           line.style.backgroundColor = g.color;
           line.dataset.index = i;
-
+          const value = document.createElement('div');
+          value.className = 'grade-value';
+          value.textContent = g.value;
+          line.appendChild(value);
           const label = document.createElement('div');
           label.className = 'grade-label';
           label.textContent = g.name;
           line.appendChild(label);
-
           container.appendChild(line);
-
           let dragging = false;
           line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
           document.addEventListener('mousemove', e => {
@@ -509,14 +470,12 @@
             let newX = e.clientX - rect.left;
             newX = Math.max(0, Math.min(containerWidth, newX));
             let newValue = Math.round((newX / containerWidth) * 1000 / currentStep) * currentStep;
-
-            // Limits
             const prevValue = i > 0 ? grades[i-1].value : 0;
             const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
             newValue = Math.max(prevValue, Math.min(nextValue, newValue));
-
             g.value = newValue;
             line.style.left = `${(g.value / 1000) * containerWidth}px`;
+            line.querySelector('.grade-value').textContent = g.value;
           });
           document.addEventListener('mouseup', () => {
             if (dragging) {
@@ -525,82 +484,19 @@
               calculateMedians();
             }
           });
+        } else {
+          line.querySelector('.grade-value').textContent = g.value;
         }
         line.style.left = `${(g.value / 1000) * containerWidth}px`;
       });
     }
-
-
-    
-
-    // При загрузке данных - загрузка позиций из allData
-    async function loadData() {
-      const res = await fetch('/api/analytics?limit=1000');
-      if (!res.ok) {
-        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
-        return;
-      }
-      allData = await res.json();
-      const vacancy = document.getElementById('vacancyFilter').value;
-      const row = allData.find(r => r.vacancy_category === vacancy);
-      if (row && row.grades_positions) {
-        Object.keys(row.grades_positions).forEach(key => {
-          const g = grades.find(gg => gg.name.toLowerCase() === key);
-          if (g) g.value = row.grades_positions[key];
-        });
-      }
-      fillFilters(allData);
-      renderChart();
-      calculateMedians();
-    }
-
-    // Слушатель смены вакансии - reload positions
-    document.getElementById('vacancyFilter').addEventListener('change', () => {
-      const vacancy = document.getElementById('vacancyFilter').value;
-      const row = allData.find(r => r.vacancy_category === vacancy);
-      if (row && row.grades_positions) {
-        Object.keys(row.grades_positions).forEach(key => {
-          const g = grades.find(gg => gg.name.toLowerCase() === key);
-          if (g) g.value = row.grades_positions[key];
-        });
-      } else {
-        // Default if no saved
-        grades[0].value = 60;
-        grades[1].value = 140;
-        grades[2].value = 280;
-        grades[3].value = 500;
-        grades[4].value = 800;
-        grades[5].value = 900;
-      }
-      renderChart();
-      calculateMedians();
-    });
-
-window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', () => {
       ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => {
           renderChart();
           calculateMedians();
         });
       });
-
-      // При смене вакансии — перезагружаем позиции
-      document.getElementById('vacancyFilter').addEventListener('change', () => {
-        const vacancy = document.getElementById('vacancyFilter').value;
-        const row = allData.find(r => r.vacancy_category === vacancy);
-        if (row?.grades_positions) {
-          Object.entries(row.grades_positions).forEach(([k, v]) => {
-            const g = grades.find(g => g.name.toLowerCase() === k);
-            if (g) g.value = v;
-          });
-        } else {
-          // дефолт
-          grades.forEach((g, i) => g.value = [60,140,280,500,800,900][i]);
-        }
-        renderChart();
-        calculateMedians();
-      });
-
       loadData();
     });
   </script>
