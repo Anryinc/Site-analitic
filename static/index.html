@@ -14,6 +14,7 @@
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
     #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+    #chart-container.pro-mode { border: 2px dashed #2196F3; resize: both; overflow: auto; min-width: 400px; min-height: 300px; }
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
@@ -31,6 +32,7 @@
     .tooltip { position: relative; display: inline-block; }
     .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+    #pro-mode-switch { margin-left: 20px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -73,6 +75,10 @@
       </select>
     </label>
   </div>
+
+  <label style="display: block; text-align: center; margin-bottom: 10px;">
+    <input type="checkbox" id="pro-mode-switch"> Pro Mode (настройка размера графика)
+  </label>
 
   <div id="chart-container">
     <canvas id="chart"></canvas>
@@ -143,7 +149,7 @@
         : 'доступно только при 1 субгрейде';
 
       // Блокировка кнопки "+ добавить субгрейд"
-      const addBtn = document.querySelector('button[textContent*="+"]');
+      const addBtn = document.querySelector('button[textContent*="+ добавить субгрейд"]');
       if (addBtn) addBtn.disabled = !isMedian;
     }
 
@@ -152,6 +158,26 @@
       updatePercentileState();
       calculateMedians();
     });
+
+    // Pro Mode switch
+    const proModeSwitch = document.getElementById('pro-mode-switch');
+    const chartContainer = document.getElementById('chart-container');
+
+    proModeSwitch.addEventListener('change', () => {
+      if (proModeSwitch.checked) {
+        chartContainer.classList.add('pro-mode');
+      } else {
+        chartContainer.classList.remove('pro-mode');
+      }
+      localStorage.setItem('chartWidth', chartContainer.style.width);
+      localStorage.setItem('chartHeight', chartContainer.style.height);
+    });
+
+    // Load saved size from localStorage
+    const savedWidth = localStorage.getItem('chartWidth');
+    const savedHeight = localStorage.getItem('chartHeight');
+    if (savedWidth) chartContainer.style.width = savedWidth;
+    if (savedHeight) chartContainer.style.height = savedHeight;
 
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
@@ -301,7 +327,7 @@
 
       // Subgrade rows
       let percs = subPercentiles[subLevel];
-      if (subLevel === 1) percs = [marketPercentile]; // Используем выбранный перцентиль для одного субгрейда
+      if (subLevel === 1) percs = [marketPercentile];
       for (let j = 0; j < subLevel; j++) {
         const row = table.insertRow();
         row.insertCell().textContent = `Субгрейд ${j + 1}`;
