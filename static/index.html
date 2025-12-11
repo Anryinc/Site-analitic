@@ -13,14 +13,14 @@
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
-    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: visible; }
     #chart { height: calc(100% - 50px); width: 100%; }
     #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
-    .ruler-dot { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #000; border-radius: 50%; }
+    .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
     #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
@@ -31,10 +31,11 @@
     .tooltip { position: relative; display: inline-block; }
     .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
-    #pro-mode-controls { display: none; text-align: center; margin-bottom: 10px; }
+    #pro-mode-controls { display: none; text-align: center; }
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: block; margin: 5px 0; }
-    input[type="range"] { width: 300px; }
+    #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+    .pro-mode #lines-area { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
   </style>
 </head>
 <body>
@@ -79,15 +80,16 @@
   </div>
 
   <label style="display: block; text-align: center; margin-bottom: 10px;">
-    <input type="checkbox" id="pro-mode-switch"> Pro Mode (настройка размера графика)
+    <input type="checkbox" id="pro-mode-switch"> Pro Mode (настройка зоны линий)
   </label>
 
   <div id="pro-mode-controls">
-    <label>Ширина: <input type="range" id="widthSlider" min="600" max="1500" value="1100" step="10"></label>
-    <label>Высота: <input type="range" id="heightSlider" min="300" max="800" value="500" step="10"></label>
+    <label>Ширина зоны: <input type="range" id="linesWidthSlider" min="600" max="1500" value="1100" step="10"></label>
+    <label>Высота зоны: <input type="range" id="linesHeightSlider" min="300" max="800" value="500" step="10"></label>
   </div>
 
   <div id="chart-container">
+    <div id="lines-area"></div>
     <canvas id="chart"></canvas>
     <div id="ruler"></div>
   </div>
@@ -169,35 +171,36 @@
     // Pro Mode switch and sliders
     const proModeSwitch = document.getElementById('pro-mode-switch');
     const proModeControls = document.getElementById('pro-mode-controls');
-    const chartContainer = document.getElementById('chart-container');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
+    const linesArea = document.getElementById('lines-area');
+    const linesWidthSlider = document.getElementById('linesWidthSlider');
+    const linesHeightSlider = document.getElementById('linesHeightSlider');
 
     proModeSwitch.addEventListener('change', () => {
       proModeControls.classList.toggle('active', proModeSwitch.checked);
+      linesArea.classList.toggle('pro-mode', proModeSwitch.checked);
       if (proModeSwitch.checked) {
-        widthSlider.value = parseInt(chartContainer.style.maxWidth) || 1100;
-        heightSlider.value = parseInt(chartContainer.style.height) || 500;
+        linesWidthSlider.value = linesArea.clientWidth;
+        linesHeightSlider.value = linesArea.clientHeight;
       }
     });
 
-    widthSlider.addEventListener('input', () => {
-      chartContainer.style.maxWidth = `${widthSlider.value}px`;
-      localStorage.setItem('chartMaxWidth', widthSlider.value);
+    linesWidthSlider.addEventListener('input', () => {
+      linesArea.style.width = `${linesWidthSlider.value}px`;
+      localStorage.setItem('linesWidth', linesWidthSlider.value);
       renderChart();
     });
 
-    heightSlider.addEventListener('input', () => {
-      chartContainer.style.height = `${heightSlider.value}px`;
-      localStorage.setItem('chartHeight', heightSlider.value);
+    linesHeightSlider.addEventListener('input', () => {
+      linesArea.style.height = `${linesHeightSlider.value}px`;
+      localStorage.setItem('linesHeight', linesHeightSlider.value);
       renderChart();
     });
 
-    // Load saved sizes
-    const savedMaxWidth = localStorage.getItem('chartMaxWidth');
-    const savedHeight = localStorage.getItem('chartHeight');
-    if (savedMaxWidth) chartContainer.style.maxWidth = `${savedMaxWidth}px`;
-    if (savedHeight) chartContainer.style.height = `${savedHeight}px`;
+    // Load saved sizes for lines-area
+    const savedLinesWidth = localStorage.getItem('linesWidth');
+    const savedLinesHeight = localStorage.getItem('linesHeight');
+    if (savedLinesWidth) linesArea.style.width = `${savedLinesWidth}px`;
+    if (savedLinesHeight) linesArea.style.height = `${savedLinesHeight}px`;
 
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
