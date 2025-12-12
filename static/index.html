@@ -1,3 +1,5 @@
+[file name]: index.html
+[file content begin]
 <!doctype html>
 <html>
 <head>
@@ -21,7 +23,7 @@
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
     .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
-    #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    #grades-table { width: 100%; border-collapse: collapse; margin-top: 30px; } /* Изменено с 20px на 30px */
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
     #grades-table .button-cell { text-align: left; padding-left: 20px; }
@@ -174,33 +176,46 @@
     const linesArea = document.getElementById('lines-area');
     const linesWidthSlider = document.getElementById('linesWidthSlider');
     const linesHeightSlider = document.getElementById('linesHeightSlider');
+    const ruler = document.getElementById('ruler');
+    const chartContainer = document.getElementById('chart-container');
 
     proModeSwitch.addEventListener('change', () => {
       proModeControls.classList.toggle('active', proModeSwitch.checked);
       linesArea.classList.toggle('pro-mode', proModeSwitch.checked);
       if (proModeSwitch.checked) {
-        linesWidthSlider.value = linesArea.clientWidth;
-        linesHeightSlider.value = linesArea.clientHeight;
+        linesWidthSlider.value = chartContainer.clientWidth;
+        linesHeightSlider.value = chartContainer.clientHeight;
       }
     });
 
     linesWidthSlider.addEventListener('input', () => {
-      linesArea.style.width = `${linesWidthSlider.value}px`;
-      localStorage.setItem('linesWidth', linesWidthSlider.value);
+      const newWidth = parseInt(linesWidthSlider.value);
+      chartContainer.style.width = `${newWidth}px`;
+      ruler.style.width = `${newWidth}px`;
+      localStorage.setItem('chartContainerWidth', newWidth);
       renderChart();
     });
 
     linesHeightSlider.addEventListener('input', () => {
-      linesArea.style.height = `${linesHeightSlider.value}px`;
-      localStorage.setItem('linesHeight', linesHeightSlider.value);
+      const newHeight = parseInt(linesHeightSlider.value);
+      chartContainer.style.height = `${newHeight}px`;
+      ruler.style.height = '50px'; // Сохраняем фиксированную высоту ruler
+      localStorage.setItem('chartContainerHeight', newHeight);
       renderChart();
     });
 
-    // Load saved sizes for lines-area
-    const savedLinesWidth = localStorage.getItem('linesWidth');
-    const savedLinesHeight = localStorage.getItem('linesHeight');
-    if (savedLinesWidth) linesArea.style.width = `${savedLinesWidth}px`;
-    if (savedLinesHeight) linesArea.style.height = `${savedLinesHeight}px`;
+    // Load saved sizes for chart-container
+    const savedChartContainerWidth = localStorage.getItem('chartContainerWidth');
+    const savedChartContainerHeight = localStorage.getItem('chartContainerHeight');
+    if (savedChartContainerWidth) {
+      chartContainer.style.width = `${savedChartContainerWidth}px`;
+      ruler.style.width = `${savedChartContainerWidth}px`;
+      linesWidthSlider.value = savedChartContainerWidth;
+    }
+    if (savedChartContainerHeight) {
+      chartContainer.style.height = `${savedChartContainerHeight}px`;
+      linesHeightSlider.value = savedChartContainerHeight;
+    }
 
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
@@ -516,9 +531,8 @@
       });
 
       // Ruler with dots
-      const ruler = document.getElementById('ruler');
       ruler.innerHTML = '';
-      const containerWidth = document.getElementById('chart-container').clientWidth;
+      const containerWidth = chartContainer.clientWidth;
       currentLabels.forEach((label, i) => {
         const tick = document.createElement('div');
         tick.className = 'ruler-tick';
@@ -597,3 +611,4 @@
   </script>
 </body>
 </html>
+[file content end]
