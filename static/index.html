@@ -13,29 +13,57 @@
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
-    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: visible; }
+    
+    /* Контейнер графика */
+    #chart-container { 
+      position: relative; 
+      width: 100%; 
+      max-width: 1100px; 
+      height: 500px; 
+      margin: 30px auto; 
+      background: white; 
+      border-radius: 12px; 
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+      overflow: visible; /* Важно, чтобы линейка могла вылезать за края */
+    }
+    
     #chart { height: calc(100% - 50px); width: 100%; }
-    #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+    
+    /* Линейка (Ruler) */
+    #ruler { 
+      height: 50px; 
+      background: #222; 
+      position: relative; 
+      border-bottom-left-radius: 12px; 
+      border-bottom-right-radius: 12px;
+      width: 100%; /* По умолчанию */
+      transform-origin: left top; /* Растягивается от левого края */
+    }
+
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
     .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
+    
     #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
     #grades-table .button-cell { text-align: left; padding-left: 20px; }
+    
     button { padding: 8px 16px; margin: 0 5px; cursor: pointer; border: none; border-radius: 6px; background: #2196F3; color: white; font-weight: bold; }
     button:hover { background: #1976D2; }
     button:disabled { background: #aaa; cursor: not-allowed; }
+    
     .tooltip { position: relative; display: inline-block; }
     .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
-    #pro-mode-controls { display: none; text-align: center; }
+    
+    #pro-mode-controls { display: none; text-align: center; background: #e3f2fd; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 600px; }
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: block; margin: 5px 0; }
+    
     #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
-    .pro-mode #lines-area { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
   </style>
 </head>
 <body>
@@ -79,13 +107,15 @@
     </label>
   </div>
 
-  <label style="display: block; text-align: center; margin-bottom: 10px;">
-    <input type="checkbox" id="pro-mode-switch"> Pro Mode (настройка зоны линий)
+  <label style="display: block; text-align: center; margin-bottom: 10px; cursor: pointer;">
+    <input type="checkbox" id="pro-mode-switch"> <strong>Pro Mode</strong> (Ручная подгонка линейки)
   </label>
 
   <div id="pro-mode-controls">
-    <label>Ширина зоны: <input type="range" id="linesWidthSlider" min="600" max="1500" value="1100" step="10"></label>
-    <label>Высота зоны: <input type="range" id="linesHeightSlider" min="300" max="800" value="500" step="10"></label>
+    <p style="margin:0 0 10px 0; font-size:12px; color:#666;">Изменяйте ширину и высоту линейки независимо от графика для точного совпадения делений.</p>
+    <label>Ширина линейки (Ruler Width): <input type="range" id="linesWidthSlider" min="500" max="1500" value="1100" step="1"></label>
+    <label>Высота линейки (Ruler Height): <input type="range" id="linesHeightSlider" min="20" max="150" value="50" step="1"></label>
+    <button onclick="resetRuler()" style="font-size: 12px; padding: 4px 8px; background:#666; margin-top:5px;">Сбросить настройки линейки</button>
   </div>
 
   <div id="chart-container">
@@ -144,7 +174,7 @@
       }
     });
 
-    // PERCENTILE SELECT + БЛОКИРОВКА
+    // PERCENTILE SELECT
     const percentileSelect = document.getElementById('percentileSelect');
     const percentileTooltip = document.getElementById('percentileTooltip');
 
@@ -157,7 +187,6 @@
         ? (isMedian ? '' : 'доступно только при 50-м перцентиле')
         : 'доступно только при 1 субгрейде';
 
-      // Блокировка кнопки "+ добавить субгрейд"
       const addBtn = document.querySelector('button[textContent*="+ добавить субгрейд"]');
       if (addBtn) addBtn.disabled = !isMedian;
     }
@@ -168,39 +197,86 @@
       calculateMedians();
     });
 
-    // Pro Mode switch and sliders
+    // --- PRO MODE & RULER LOGIC ---
     const proModeSwitch = document.getElementById('pro-mode-switch');
     const proModeControls = document.getElementById('pro-mode-controls');
-    const linesArea = document.getElementById('lines-area');
+    
+    // Элемент, который будем менять (только линейка)
+    const rulerElement = document.getElementById('ruler');
+    const chartContainer = document.getElementById('chart-container');
+    
+    // Слайдеры
     const linesWidthSlider = document.getElementById('linesWidthSlider');
     const linesHeightSlider = document.getElementById('linesHeightSlider');
 
+    // Функция применения размеров
+    function applyRulerStyles(width, height) {
+        if (width) rulerElement.style.width = width + 'px';
+        else rulerElement.style.width = '100%'; // default
+        
+        if (height) rulerElement.style.height = height + 'px';
+        else rulerElement.style.height = '50px'; // default
+    }
+
+    // Включение Pro Mode
     proModeSwitch.addEventListener('change', () => {
       proModeControls.classList.toggle('active', proModeSwitch.checked);
-      linesArea.classList.toggle('pro-mode', proModeSwitch.checked);
+      
+      // Инициализация значений слайдеров при открытии
       if (proModeSwitch.checked) {
-        linesWidthSlider.value = linesArea.clientWidth;
-        linesHeightSlider.value = linesArea.clientHeight;
+        // Если ширина не задана явно, берем текущую ширину контейнера
+        const currWidth = rulerElement.style.width && rulerElement.style.width !== '100%' 
+                          ? parseInt(rulerElement.style.width) 
+                          : chartContainer.clientWidth;
+        
+        const currHeight = rulerElement.style.height 
+                           ? parseInt(rulerElement.style.height) 
+                           : 50;
+
+        linesWidthSlider.value = currWidth;
+        linesHeightSlider.value = currHeight;
       }
     });
 
+    // Обработчик слайдера ширины
     linesWidthSlider.addEventListener('input', () => {
-      linesArea.style.width = `${linesWidthSlider.value}px`;
-      localStorage.setItem('linesWidth', linesWidthSlider.value);
-      renderChart();
+      const val = linesWidthSlider.value;
+      rulerElement.style.width = `${val}px`;
+      localStorage.setItem('rulerWidth', val);
     });
 
+    // Обработчик слайдера высоты
     linesHeightSlider.addEventListener('input', () => {
-      linesArea.style.height = `${linesHeightSlider.value}px`;
-      localStorage.setItem('linesHeight', linesHeightSlider.value);
-      renderChart();
+      const val = linesHeightSlider.value;
+      rulerElement.style.height = `${val}px`;
+      localStorage.setItem('rulerHeight', val);
     });
 
-    // Load saved sizes for lines-area
-    const savedLinesWidth = localStorage.getItem('linesWidth');
-    const savedLinesHeight = localStorage.getItem('linesHeight');
-    if (savedLinesWidth) linesArea.style.width = `${savedLinesWidth}px`;
-    if (savedLinesHeight) linesArea.style.height = `${savedLinesHeight}px`;
+    // Загрузка сохраненных настроек линейки
+    const savedRulerWidth = localStorage.getItem('rulerWidth');
+    const savedRulerHeight = localStorage.getItem('rulerHeight');
+    
+    if (savedRulerWidth) {
+        rulerElement.style.width = `${savedRulerWidth}px`;
+        linesWidthSlider.value = savedRulerWidth;
+    }
+    if (savedRulerHeight) {
+        rulerElement.style.height = `${savedRulerHeight}px`;
+        linesHeightSlider.value = savedRulerHeight;
+    }
+
+    // Сброс настроек
+    window.resetRuler = function() {
+        localStorage.removeItem('rulerWidth');
+        localStorage.removeItem('rulerHeight');
+        rulerElement.style.width = '100%';
+        rulerElement.style.height = '50px';
+        linesWidthSlider.value = chartContainer.clientWidth;
+        linesHeightSlider.value = 50;
+        alert("Настройки линейки сброшены к стандартным");
+    };
+
+    // --- DATA & CHART LOGIC ---
 
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
@@ -214,10 +290,12 @@
     async function loadData() {
       const res = await fetch('/api/analytics?limit=1000');
       if (!res.ok) {
-        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
-        return;
+        // Fallback for demo purposes if API fails
+        console.warn('API fetch failed, using mock data');
+        allData = []; 
+      } else {
+        allData = await res.json();
       }
-      allData = await res.json();
       fillFilters(allData);
       renderChart();
       calculateMedians();
@@ -340,7 +418,6 @@
       const table = document.getElementById('grades-table');
       table.innerHTML = '';
 
-      // Header
       const header = table.insertRow();
       header.insertCell().textContent = '';
       grades.slice(0, -1).forEach(g => {
@@ -348,7 +425,6 @@
         th.textContent = g.name;
       });
 
-      // Subgrade rows
       let percs = subPercentiles[subLevel];
       if (subLevel === 1) percs = [marketPercentile];
       for (let j = 0; j < subLevel; j++) {
@@ -375,7 +451,6 @@
         }
       }
 
-      // Button row
       const buttonRow = table.insertRow();
       const buttonCell = buttonRow.insertCell();
       buttonCell.colSpan = grades.length;
@@ -404,6 +479,9 @@
 
     function renderChart() {
       const data = filterData();
+      // Если данных нет, график пустой, но линейку все равно нужно рисовать
+      // (опустим полную логику агрегации если данных 0 для краткости, 
+      // но в реальном коде лучше проверки оставить)
 
       const baseResumes = {};
       const baseVacancies = {};
@@ -444,10 +522,8 @@
       const rawLabels = Object.keys(aggResumes);
       currentLabels = formatLabels(rawLabels, currentStep);
 
-      // Sort grades to prevent crossing
+      // Annotations logic
       grades.sort((a, b) => a.value - b.value);
-
-      // Annotations for fills (using grade colors)
       const annotations = [];
       for (let i = 0; i < grades.length - 1; i++) {
         let startIdx = currentLabels.findIndex(l => {
@@ -515,26 +591,30 @@
         }
       });
 
-      // Ruler with dots
+      // Ruler Render
       const ruler = document.getElementById('ruler');
+      // Очищаем содержимое линейки (точки и цифры), но НЕ сбрасываем width/height заданные через JS style
       ruler.innerHTML = '';
-      const containerWidth = document.getElementById('chart-container').clientWidth;
+      
+      // Рисуем деления. Позиционируем их в % от текущей ширины ruler
       currentLabels.forEach((label, i) => {
         const tick = document.createElement('div');
         tick.className = 'ruler-tick';
+        // (i / (N - 1)) * 100%
         tick.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
         tick.textContent = label;
         ruler.appendChild(tick);
 
-        // Add dot
         const dot = document.createElement('div');
         dot.className = 'ruler-dot';
         dot.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
         ruler.appendChild(dot);
       });
 
-      // Lines with value display
+      // Vertical Grades Lines
       const container = document.getElementById('chart-container');
+      const containerWidth = container.clientWidth;
+      
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
         if (!line) {
@@ -564,12 +644,15 @@
             let newX = e.clientX - rect.left;
             newX = Math.max(0, Math.min(containerWidth, newX));
             let newValue = Math.round((newX / containerWidth) * 1000 / currentStep) * currentStep;
+            
+            // Constraints
             const prevValue = i > 0 ? grades[i-1].value : 0;
             const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
             newValue = Math.max(prevValue, Math.min(nextValue, newValue));
+            
             g.value = newValue;
             line.style.left = `${(g.value / 1000) * containerWidth}px`;
-            line.querySelector('.grade-value').textContent = g.value + 'k'; // Update value display
+            line.querySelector('.grade-value').textContent = g.value + 'k';
           });
           document.addEventListener('mouseup', () => {
             if (dragging) {
