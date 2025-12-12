@@ -14,8 +14,8 @@
     #chart-container { position: relative; display: flex; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
     .bin { flex: 1; position: relative; height: 100%; border-right: 1px solid #ddd; }
     .bin:last-child { border-right: none; }
-    .vacancy-bar { position: absolute; bottom: 50px; left: 10%; width: 30%; background-color: rgba(255,99,132,0.6); }
-    .resume-bar { position: absolute; bottom: 50px; left: 60%; width: 30%; background-color: rgba(54,162,235,0.1); border: 1px solid rgba(54,162,235,0.9); }
+    .vacancy-bar { position: absolute; bottom: 50px; left: 10%; width: 30%; background-color: rgba(255,99,132,0.6); transition: height 0.3s; }
+    .resume-bar { position: absolute; bottom: 50px; left: 60%; width: 30%; background-color: rgba(54,162,235,0.1); border: 1px solid rgba(54,162,235,0.9); transition: height 0.3s; }
     .bin-label { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%) rotate(90deg); font-size: 11px; color: #aaa; white-space: nowrap; }
     .grade-line { position: absolute; top: 0; width: 4px; height: calc(100% - 50px + 40px); background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
@@ -121,7 +121,7 @@
 
     let grades = [...baseGrades, { name: "End", color: "#000000", value: 900 }];
 
-    // Кнопка сохранения
+    // Кнопка сохранения (без изменений)
     document.getElementById('saveBtn').addEventListener('click', async () => {
       const vacancy = document.getElementById('vacancyFilter').value;
       if (!vacancy) return alert('Выберите вакансию');
@@ -161,6 +161,7 @@
     async function loadData() {
       try {
         const res = await fetch('/api/analytics?limit=500');
+        if (!res.ok) throw new Error('Failed to fetch');
         allData = await res.json();
         populateFilters();
         renderVisualization();
@@ -168,8 +169,11 @@
         updatePercentileState();
       } catch (e) {
         alert('Ошибка загрузки данных: ' + e.message);
+        console.error(e);
       }
     }
+
+    // populateFilters, filterData — без изменений
 
     function populateFilters() {
       const vacancies = new Set();
@@ -215,103 +219,94 @@
 
       return allData.filter(rec => 
         (!vacancy || rec.vacancy_category === vacancy) &&
-        (!city || rec.city === city || (city === '' && !rec.city)) &&  // "Все города" — только записи без города или с любым
+        (!city || rec.city === city) &&
         (!quarter || rec.quarter === quarter)
       );
     }
 
-    function parseSalaryData(json) {
-      try { return JSON.parse(json) || {}; } catch { return {}; }
+    function parseSalaryData(json_str) {
+      if (!json_str) return {};
+      try {
+        return JSON.parse(json_str);
+      } catch (e) {
+        console.error('JSON parse error:', e, json_str);
+        return {};
+      }
     }
 
     function aggregateData(baseData, step) {
       const agg = {};
-      let currentKey = null;
+      const sortedKeys = Object.keys(baseData).sort((a, b) => parseRange(a) - parseRange(b));
+
+      let currentLow = null;
       let currentSum = 0;
 
-      Object.keys(baseData).sort((a, b) => parseRange(a) - parseRange(b)).forEach(range => {
-        if (range.startsWith('less_') || range.startsWith('more_')) {
-          agg[range] = (agg[range] || 0) + baseData[range];
-        } else {
-          const low = parseInt(range.split('_')[0].replace('k', ''));
-          if (currentKey === null || low % step === 0) {
-            if (currentKey) agg[currentKey] = currentSum;
-            currentKey = `${low}k_${low + step}k`;
-            currentSum = baseData[range];
-          } else {
-            currentSum += baseData[range];
-          }
+      for (const key of sortedKeys) {
+        if (key.startsWith('less_') || key.startsWith('more_')) {
+          agg[key] = (agg[key] || 0) + (baseData[key] || 0);
+          continue;
         }
-      });
-      if (currentKey) agg[currentKey] = currentSum;
+
+        const low = parseRange(key);
+
+        if (currentLow === null || low >= currentLow + step || low % step === 0) {
+          if (currentLow !== null) {
+            agg[`${currentLow}k_${currentLow + step}k`] = currentSum;
+          }
+          currentLow = Math.floor(low / step) * step;
+          currentSum = baseData[key] || 0;
+        } else {
+          currentSum += baseData[key] || 0;
+        }
+      }
+
+      if (currentLow !== null) {
+        agg[`${currentLow}k_${currentLow + step}k`] = currentSum;
+      }
+
       return agg;
     }
 
-    function parseRange(range) {
-      if (range.startsWith('less_')) return -1;
-      if (range.startsWith('more_')) return Infinity;
-      return parseInt(range.split('_')[0].replace('k', ''));
+    function parseRange(r) {
+      if (r.startsWith('less_')) return -Infinity;
+      if (r.startsWith('more_')) return Infinity;
+      return parseInt(r.split('_')[0].replace('k', ''));
     }
 
-    function formatLabels(rawLabels, step) {
-      return rawLabels.map(label => {
-        if (label.startsWith('less_')) return 'до ' + label.replace('less_', '').replace('k', '');
-        if (label.startsWith('more_')) return 'свыше ' + label.replace('more_', '').replace('k', '');
-        const [low, high] = label.replace(/k/g, '').split('_');
-        return `${low}-${high}`;
+    function formatLabels(rawKeys, step) {
+      return rawKeys.map(key => {
+        if (key.startsWith('less_')) return 'до ' + key.replace('less_', '').replace('k', '');
+        if (key.startsWith('more_')) return 'свыше ' + key.replace('more_', '').replace('k', '');
+        const low = parseInt(key.split('k_')[0]);
+        return `${low}-${low + step}`;
       });
     }
 
     function getStart(raw) {
-      if (raw.startsWith('less_')) return 0;
-      if (raw.startsWith('more_')) return 1000;
-      return parseInt(raw.split('_')[0].replace('k', ''));
+      if (raw.startsWith('less_')) return -Infinity;
+      if (raw.startsWith('more_')) return Infinity;
+      return parseInt(raw.split('k_')[0]);
     }
 
-    function getBinLabel(raw, step) {
-      if (raw.startsWith('less_')) return 'до ' + raw.replace('less_', '').replace('k', '');
-      if (raw.startsWith('more_')) return 'свыше ' + raw.replace('more_', '').replace('k', '');
-      const low = parseInt(raw.split('_')[0].replace('k', ''));
-      return `${low}-${low + step}`;
-    }
-
-    function calculateMedianForRange(data, minVal, maxVal, field) {
-      let totalPct = 0;
-      let cumulative = 0;
-      const target = 50; // медиана
-
-      const relevantRanges = Object.keys(data).filter(k => {
-        const start = getStart(k);
-        return start >= minVal && start < maxVal;
-      }).sort((a,b) => getStart(a) - getStart(b));
-
-      for (const range of relevantRanges) {
-        totalPct += data[range] || 0;
-      }
-
-      if (totalPct === 0) return null;
-
-      for (const range of relevantRanges) {
-        const pct = data[range] || 0;
-        cumulative += pct;
-        if (cumulative / totalPct * 100 >= target) {
-          const low = getStart(range);
-          return low + currentStep / 2;
-        }
-      }
-      return getStart(relevantRanges[relevantRanges.length-1]) + currentStep / 2;
+    function getBinLabel(start, step) {
+      if (start === -Infinity) return 'до ...';
+      if (start === Infinity) return 'свыше ...';
+      return `${start}-${start + step}`;
     }
 
     function calculateMedians() {
       const data = filterData();
-      if (data.length === 0) return;
+      if (data.length === 0) {
+        document.getElementById('grades-table').innerHTML = '<tr><td>Нет данных</td></tr>';
+        return;
+      }
 
       const combined = {};
       data.forEach(rec => {
         const r = parseSalaryData(rec.resumes_pct_json);
         const v = parseSalaryData(rec.vacancies_pct_json);
-        Object.keys(r).forEach(k => combined[k] = (combined[k] || 0) + r[k]);
-        Object.keys(v).forEach(k => combined[k] = (combined[k] || 0) + v[k]);
+        Object.entries(r).forEach(([k, val]) => combined[k] = (combined[k] || 0) + val);
+        Object.entries(v).forEach(([k, val]) => combined[k] = (combined[k] || 0) + val);
       });
 
       const aggCombined = aggregateData(combined, currentStep);
@@ -319,7 +314,6 @@
       const table = document.getElementById('grades-table');
       table.innerHTML = '';
 
-      // Заголовок — названия грейдов
       const headerRow = table.insertRow();
       baseGrades.forEach(g => {
         const th = document.createElement('th');
@@ -327,128 +321,150 @@
         headerRow.appendChild(th);
       });
 
-      // Строка с медианами
-      const valueRow = table.insertRow();
+      const medianRow = table.insertRow();
       baseGrades.forEach((g, i) => {
-        const next = i < baseGrades.length - 1 ? baseGrades[i+1].value : grades[grades.length-1].value;
-        const med = calculateMedianForRange(aggCombined, g.value, next, 'combined');
-        const td = valueRow.insertCell();
-        td.textContent = med ? Math.round(med) + 'k' : 'N/A';
-      });
-
-      // Строки субгрейдов
-      for (let level = 2; level <= subLevel; level++) {
-        const row = table.insertRow();
-        baseGrades.forEach((g, i) => {
-          const td = row.insertCell();
-          if (level <= subPercentiles[subLevel].length) {
-            const pct = subPercentiles[subLevel][level-2];
-            // Здесь можно реализовать расчет субперцентилей, пока заглушка
-            td.textContent = pct + '-й';
+        const nextVal = i < baseGrades.length - 1 ? baseGrades[i + 1].value : grades[grades.length - 1].value;
+        let cumulative = 0;
+        let total = 0;
+        Object.keys(aggCombined).sort((a,b) => getStart(a) - getStart(b)).forEach(k => {
+          const start = getStart(k);
+          if (start >= g.value && start < nextVal) {
+            const val = aggCombined[k] || 0;
+            total += val;
           }
         });
+
+        if (total === 0) {
+          medianRow.insertCell().textContent = 'N/A';
+          return;
+        }
+
+        let found = false;
+        Object.keys(aggCombined).sort((a,b) => getStart(a) - getStart(b)).forEach(k => {
+          const start = getStart(k);
+          if (start >= g.value && start < nextVal) {
+            const val = aggCombined[k] || 0;
+            cumulative += val;
+            if (cumulative >= total * 0.5 && !found) {
+              found = true;
+              const low = getStart(k);
+              medianRow.insertCell().textContent = Math.round(low + currentStep / 2) + 'k';
+            }
+          }
+        });
+        if (!found) medianRow.insertCell().textContent = 'N/A';
+      });
+
+      // Субгрейды (заглушка, можно доработать)
+      for (let l = 2; l <= subLevel; l++) {
+        const row = table.insertRow();
+        baseGrades.forEach(() => row.insertCell().textContent = '-');
       }
 
-      // Кнопки управления субгрейдами
+      // Кнопки
       const btnRow = table.insertRow();
       const btnCell = btnRow.insertCell();
       btnCell.colSpan = baseGrades.length;
       btnCell.style.textAlign = 'center';
 
       if (subLevel < 5) {
-        const addBtn = document.createElement('button');
-        addBtn.textContent = '+ добавить субгрейд';
-        addBtn.onclick = () => { subLevel++; updatePercentileState(); calculateMedians(); };
-        btnCell.appendChild(addBtn);
+        const add = document.createElement('button');
+        add.textContent = '+ добавить субгрейд';
+        add.onclick = () => { subLevel++; updatePercentileState(); calculateMedians(); };
+        btnCell.appendChild(add);
       }
       if (subLevel > 1) {
-        const remBtn = document.createElement('button');
-        remBtn.textContent = '- убрать субгрейд';
-        remBtn.onclick = () => { subLevel--; updatePercentileState(); calculateMedians(); };
-        btnCell.appendChild(remBtn);
+        const rem = document.createElement('button');
+        rem.textContent = '- убрать субгрейд';
+        rem.onclick = () => { subLevel--; updatePercentileState(); calculateMedians(); };
+        btnCell.appendChild(rem);
       }
     }
 
     function renderVisualization() {
       const data = filterData();
+      if (data.length === 0) {
+        document.getElementById('chart-container').innerHTML = '<div style="width:100%;text-align:center;padding:100px;">Нет данных для отображения</div>';
+        return;
+      }
 
-      const baseResumes = {}, baseVacancies = {}, baseRanges = new Set();
-      data.forEach(record => {
-        const r = parseSalaryData(record.resumes_pct_json);
-        const v = parseSalaryData(record.vacancies_pct_json);
-        Object.keys(r).forEach(k => { baseRanges.add(k); });
-        Object.keys(v).forEach(k => { baseRanges.add(k); });
+      const baseResumes = {}, baseVacancies = {}, ranges = new Set();
+
+      data.forEach(rec => {
+        const r = parseSalaryData(rec.resumes_pct_json);
+        const v = parseSalaryData(rec.vacancies_pct_json);
+        Object.keys(r).forEach(k => ranges.add(k));
+        Object.keys(v).forEach(k => ranges.add(k));
       });
 
-      const sortedBase = Array.from(baseRanges).sort((a, b) => parseRange(a) - parseRange(b));
+      const sortedRanges = Array.from(ranges).sort((a, b) => parseRange(a) - parseRange(b));
 
-      sortedBase.forEach(range => {
+      sortedRanges.forEach(range => {
         let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
         data.forEach(rec => {
-          if (rec.resumes_pct_json) {
-            const val = parseSalaryData(rec.resumes_pct_json)[range];
-            if (val !== undefined) { rSum += val; rCnt++; }
-          }
-          if (rec.vacancies_pct_json) {
-            const val = parseSalaryData(rec.vacancies_pct_json)[range];
-            if (val !== undefined) { vSum += val; vCnt++; }
-          }
+          const rv = parseSalaryData(rec.resumes_pct_json)[range];
+          if (rv !== undefined) { rSum += rv; rCnt++; }
+          const vv = parseSalaryData(rec.vacancies_pct_json)[range];
+          if (vv !== undefined) { vSum += vv; vCnt++; }
         });
-        baseResumes[range] = rCnt ? rSum / rCnt : 0;
-        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
+        baseResumes[range] = rCnt > 0 ? rSum / rCnt : 0;
+        baseVacancies[range] = vCnt > 0 ? vSum / vCnt : 0;
       });
 
       currentStep = parseInt(document.getElementById('stepFilter').value) || 20;
 
       const aggResumes = aggregateData(baseResumes, currentStep);
       const aggVacancies = aggregateData(baseVacancies, currentStep);
-      currentRawKeys = Object.keys(aggResumes).sort((a,b) => getStart(a) - getStart(b));
+
+      currentRawKeys = Object.keys(aggResumes).sort((a, b) => getStart(a) - getStart(b));
       currentLabels = formatLabels(currentRawKeys, currentStep);
 
       const container = document.getElementById('chart-container');
       container.innerHTML = '';
 
-      let maxP = 0;
+      let maxPct = 1; // минимально, чтобы бары были видны даже при малых %
       currentRawKeys.forEach(k => {
-        maxP = Math.max(maxP, aggResumes[k] || 0, aggVacancies[k] || 0);
+        maxPct = Math.max(maxPct, aggResumes[k] || 0, aggVacancies[k] || 0);
       });
-      const barHeight = container.clientHeight - 80;
-      const scale = maxP > 0 ? barHeight / maxP : 0;
 
-      currentRawKeys.forEach((raw, i) => {
+      const availableHeight = container.clientHeight - 80;
+      const scale = availableHeight / maxPct;
+
+      currentRawKeys.forEach((raw, idx) => {
         const bin = document.createElement('div');
         bin.className = 'bin';
         bin.dataset.raw = raw;
         bin.dataset.start = getStart(raw);
 
+        const vHeight = (aggVacancies[raw] || 0) * scale;
+        const rHeight = (aggResumes[raw] || 0) * scale;
+
         const vBar = document.createElement('div');
         vBar.className = 'vacancy-bar';
-        vBar.style.height = `${(aggVacancies[raw] || 0) * scale}px`;
+        vBar.style.height = `${vHeight}px`;
         bin.appendChild(vBar);
 
         const rBar = document.createElement('div');
         rBar.className = 'resume-bar';
-        rBar.style.height = `${(aggResumes[raw] || 0) * scale}px`;
+        rBar.style.height = `${rHeight}px`;
         bin.appendChild(rBar);
 
         const label = document.createElement('div');
         label.className = 'bin-label';
-        label.textContent = currentLabels[i];
+        label.textContent = currentLabels[idx];
         bin.appendChild(label);
 
         container.appendChild(bin);
       });
 
-      // Фоновые цвета грейдов
+      // Фон грейдов
       grades.sort((a, b) => a.value - b.value);
       const bins = container.querySelectorAll('.bin');
-      let currentGradeIdx = 0;
+      let gradeIdx = 0;
       bins.forEach(bin => {
-        const start = parseInt(bin.dataset.start);
-        while (currentGradeIdx < grades.length - 1 && start >= grades[currentGradeIdx + 1].value) currentGradeIdx++;
-        if (currentGradeIdx < grades.length - 1) {
-          bin.style.backgroundColor = grades[currentGradeIdx].color + '2A';
-        }
+        const start = getStart(bin.dataset.raw);
+        while (gradeIdx < grades.length - 1 && start >= grades[gradeIdx + 1].value) gradeIdx++;
+        bin.style.backgroundColor = grades[gradeIdx].color + '2A';
       });
 
       // Линии грейдов
@@ -460,50 +476,52 @@
           line.className = 'grade-line';
           line.style.backgroundColor = g.color;
 
-          const valueDisplay = document.createElement('div');
-          valueDisplay.className = 'grade-value';
-          line.appendChild(valueDisplay);
+          const valDiv = document.createElement('div');
+          valDiv.className = 'grade-value';
+          line.appendChild(valDiv);
 
-          const nameLabel = document.createElement('div');
-          nameLabel.className = 'grade-label';
-          nameLabel.textContent = g.name;
-          line.appendChild(nameLabel);
+          const nameDiv = document.createElement('div');
+          nameDiv.className = 'grade-label';
+          nameDiv.textContent = g.name;
+          line.appendChild(nameDiv);
 
           container.appendChild(line);
 
           let dragging = false;
-          line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+          line.addEventListener('mousedown', () => dragging = true);
           document.addEventListener('mousemove', e => {
             if (!dragging) return;
             const rect = container.getBoundingClientRect();
-            let newX = e.clientX - rect.left;
-            newX = Math.max(0, Math.min(rect.width, newX));
-            line.style.left = `${newX}px`;
+            let x = e.clientX - rect.left;
+            x = Math.max(0, Math.min(rect.width, x));
+            line.style.left = `${x}px`;
           });
           document.addEventListener('mouseup', () => {
             if (dragging) {
               dragging = false;
-              // Привязка к ближайшему началу бина
-              let closestDist = Infinity;
-              let closestX = 0;
-              let closestStart = 0;
-              let cumX = 0;
+
+              // Snap to nearest bin left edge
+              let bestX = 0;
+              let bestStart = grades[i > 0 ? i-1 : 0].value + currentStep; // fallback
+              let cum = 0;
               bins.forEach(bin => {
-                const dist = Math.abs(cumX + bin.clientWidth / 2 - parseFloat(line.style.left));
-                if (dist < closestDist) {
-                  closestDist = dist;
-                  closestX = cumX;
-                  closestStart = parseInt(bin.dataset.start);
+                const binCenter = cum + bin.clientWidth / 2;
+                if (Math.abs(binCenter - parseFloat(line.style.left)) < Math.abs(binCenter - (bestX + bins[0].clientWidth / 2))) {
+                  bestX = cum;
+                  bestStart = parseFloat(bin.dataset.start);
                 }
-                cumX += bin.clientWidth;
+                cum += bin.clientWidth;
               });
 
+              // Respect bounds
               const prev = i > 0 ? grades[i-1].value : 0;
               const next = i < grades.length - 1 ? grades[i+1].value : Infinity;
-              g.value = Math.max(prev, Math.min(next, closestStart));
+              if (bestStart < prev) bestStart = prev + currentStep;
+              if (bestStart >= next) bestStart = next - currentStep;
+              g.value = bestStart;
 
-              line.style.left = `${closestX}px`;
-              valueDisplay.textContent = getBinLabel(currentRawKeys.find(k => getStart(k) === g.value) || '', currentStep);
+              line.style.left = `${bestX}px`;
+              line.querySelector('.grade-value').textContent = getBinLabel(g.value, currentStep);
 
               renderVisualization();
               calculateMedians();
@@ -511,39 +529,34 @@
           });
         }
 
-        // Установка позиции и подписи
+        // Position line
         let cumX = 0;
-        let found = false;
+        let positioned = false;
         bins.forEach(bin => {
-          if (parseInt(bin.dataset.start) === g.value) {
+          if (parseFloat(bin.dataset.start) === g.value) {
             line.style.left = `${cumX}px`;
-            found = true;
+            positioned = true;
           }
           cumX += bin.clientWidth;
         });
-        if (!found) {
-          // Привязка к ближайшему
-          let closestX = 0;
-          let closestStart = 0;
+        if (!positioned) {
+          // fallback snap
           cumX = 0;
-          let minDiff = Infinity;
+          let closestX = 0;
           bins.forEach(bin => {
-            const diff = Math.abs(parseInt(bin.dataset.start) - g.value);
-            if (diff < minDiff) {
-              minDiff = diff;
+            if (Math.abs(parseFloat(bin.dataset.start) - g.value) < Math.abs(parseFloat(bin.dataset.start) - (g.value + (closestX ? bins[0].clientWidth : 0)))) {
               closestX = cumX;
-              closestStart = parseInt(bin.dataset.start);
+              g.value = parseFloat(bin.dataset.start);
             }
             cumX += bin.clientWidth;
           });
-          g.value = closestStart;
           line.style.left = `${closestX}px`;
         }
-        line.querySelector('.grade-value').textContent = getBinLabel(currentRawKeys.find(k => getStart(k) === g.value) || '', currentStep);
+        line.querySelector('.grade-value').textContent = getBinLabel(g.value, currentStep);
       });
     }
 
-    // Pro Mode
+    // Pro Mode и события — без изменений
     const proModeSwitch = document.getElementById('pro-mode-switch');
     const proModeControls = document.getElementById('pro-mode-controls');
     const widthSlider = document.getElementById('linesWidthSlider');
@@ -551,18 +564,13 @@
 
     proModeSwitch.addEventListener('change', () => {
       proModeControls.classList.toggle('active', proModeSwitch.checked);
-      if (!proModeSwitch.checked) {
-        document.getElementById('chart-container').style.width = '100%';
-        document.getElementById('chart-container').style.maxWidth = '1100px';
-        document.getElementById('chart-container').style.height = '500px';
-      }
       renderVisualization();
     });
 
     widthSlider.addEventListener('input', e => {
-      const val = e.target.value + 'px';
-      document.getElementById('chart-container').style.width = val;
-      document.getElementById('chart-container').style.maxWidth = val;
+      const v = e.target.value + 'px';
+      document.getElementById('chart-container').style.width = v;
+      document.getElementById('chart-container').style.maxWidth = v;
       renderVisualization();
     });
 
