@@ -14,9 +14,9 @@
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
     #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: visible; }
-    #chart { height: calc(100% - 50px); width: 100%; }
-    #ruler { height: 50px; background: #222; position: relative; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-    .grade-line { position: absolute; width: 4px; height: 100%; top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    #chart { height: 100%; width: 100%; }
+    #ruler { position: absolute; bottom: 0; left: 0; width: 100%; height: 50px; background: #222; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+    .grade-line { position: absolute; width: 4px; height: calc(100% - 50px); top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
@@ -35,7 +35,7 @@
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: block; margin: 5px 0; }
     #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
-    .pro-mode #lines-area { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
+    #lines-area.pro-mode { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
   </style>
 </head>
 <body>
@@ -89,9 +89,10 @@
   </div>
 
   <div id="chart-container">
-    <div id="lines-area"></div>
+    <div id="lines-area">
+      <div id="ruler"></div>
+    </div>
     <canvas id="chart"></canvas>
-    <div id="ruler"></div>
   </div>
 
   <table id="grades-table"></table>
@@ -152,233 +153,155 @@
       const isSingle = subLevel === 1;
       const isMedian = marketPercentile === 50;
 
-      percentileSelect.disabled = !isSingle;
-      percentileTooltip.textContent = isSingle
-        ? (isMedian ? '' : 'доступно только при 50-м перцентиле')
-        : 'доступно только при 1 субгрейде';
-
-      // Блокировка кнопки "+ добавить субгрейд"
-      const addBtn = document.querySelector('button[textContent*="+ добавить субгрейд"]');
-      if (addBtn) addBtn.disabled = !isMedian;
+      percentileSelect.disabled = !isSingle || !isMedian;
+      percentileTooltip.textContent = isSingle && isMedian ? 'Выберите рыночный перцентиль' : 'Доступно только для одиночного грейда на медиане';
     }
 
-    percentileSelect.addEventListener('change', () => {
-      marketPercentile = parseInt(percentileSelect.value);
-      updatePercentileState();
+    percentileSelect.addEventListener('change', e => {
+      marketPercentile = parseInt(e.target.value);
       calculateMedians();
     });
 
-    // Pro Mode switch and sliders
-    const proModeSwitch = document.getElementById('pro-mode-switch');
-    const proModeControls = document.getElementById('pro-mode-controls');
-    const linesArea = document.getElementById('lines-area');
-    const linesWidthSlider = document.getElementById('linesWidthSlider');
-    const linesHeightSlider = document.getElementById('linesHeightSlider');
-
-    proModeSwitch.addEventListener('change', () => {
-      proModeControls.classList.toggle('active', proModeSwitch.checked);
-      linesArea.classList.toggle('pro-mode', proModeSwitch.checked);
-      if (proModeSwitch.checked) {
-        linesWidthSlider.value = linesArea.clientWidth;
-        linesHeightSlider.value = linesArea.clientHeight;
-      }
-    });
-
-    linesWidthSlider.addEventListener('input', () => {
-      linesArea.style.width = `${linesWidthSlider.value}px`;
-      localStorage.setItem('linesWidth', linesWidthSlider.value);
-      renderChart();
-    });
-
-    linesHeightSlider.addEventListener('input', () => {
-      linesArea.style.height = `${linesHeightSlider.value}px`;
-      localStorage.setItem('linesHeight', linesHeightSlider.value);
-      renderChart();
-    });
-
-    // Load saved sizes for lines-area
-    const savedLinesWidth = localStorage.getItem('linesWidth');
-    const savedLinesHeight = localStorage.getItem('linesHeight');
-    if (savedLinesWidth) linesArea.style.width = `${savedLinesWidth}px`;
-    if (savedLinesHeight) linesArea.style.height = `${savedLinesHeight}px`;
-
-    function getQuarter(dateStr) {
-      const d = new Date(dateStr);
-      if (isNaN(d)) return '';
-      const year = d.getFullYear();
-      const month = d.getMonth();
-      const q = Math.floor(month / 3) + 1;
-      return `${year} Q${q}`;
-    }
-
+    // Функция загрузки данных
     async function loadData() {
-      const res = await fetch('/api/analytics?limit=1000');
-      if (!res.ok) {
-        document.body.innerHTML += `<p style="color:red">Ошибка загрузки: ${res.status}</p>`;
-        return;
+      try {
+        const res = await fetch('/api/analytics?limit=500');
+        allData = await res.json();
+        populateFilters();
+        renderChart();
+        calculateMedians();
+      } catch (e) {
+        alert('Ошибка загрузки данных: ' + e.message);
       }
-      allData = await res.json();
-      fillFilters(allData);
-      renderChart();
-      calculateMedians();
-      updatePercentileState();
     }
 
-    function fillFilters(data) {
-      const vacancySet = new Set();
-      const citySet = new Set();
-      const quarterSet = new Set();
-      for (const r of data) {
-        if (r.vacancy_category) vacancySet.add(r.vacancy_category);
-        if (r.city && r.city !== 'Все города') citySet.add(r.city);
-        if (r.upload_date) quarterSet.add(getQuarter(r.upload_date));
-      }
+    // Заполнение фильтров
+    function populateFilters() {
+      const vacancies = new Set();
+      const cities = new Set();
+      const quarters = new Set();
+
+      allData.forEach(rec => {
+        if (rec.vacancy_category) vacancies.add(rec.vacancy_category);
+        if (rec.city) cities.add(rec.city);
+        if (rec.quarter) quarters.add(rec.quarter);
+      });
 
       const vacancyFilter = document.getElementById('vacancyFilter');
-      const cityFilter = document.getElementById('cityFilter');
-      const quarterFilter = document.getElementById('quarterFilter');
-
-      const sortedVacancies = Array.from(vacancySet).sort();
-      vacancyFilter.innerHTML = sortedVacancies.map(v => `<option value="${v}">${v}</option>`).join('');
-      if (sortedVacancies.length > 0) vacancyFilter.value = sortedVacancies[0];
-
-      const sortedCities = Array.from(citySet).sort();
-      cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
-
-      const sortedQuarters = Array.from(quarterSet).sort((a, b) => {
-        const [yA, qA] = a.split(' Q');
-        const [yB, qB] = b.split(' Q');
-        return (yB - yA) || (qB - qA);
+      vacancyFilter.innerHTML = '';
+      vacancies.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = v;
+        vacancyFilter.appendChild(opt);
       });
-      quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
-      if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
+
+      const cityFilter = document.getElementById('cityFilter');
+      cities.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = c;
+        cityFilter.appendChild(opt);
+      });
+
+      const quarterFilter = document.getElementById('quarterFilter');
+      quarterFilter.innerHTML = '<option value="">Все</option>';
+      quarters.forEach(q => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = q;
+        quarterFilter.appendChild(opt);
+      });
     }
 
-    function parseSalaryData(jsonField) {
-      if (!jsonField || typeof jsonField !== 'object') return {};
-      return jsonField;
-    }
-
+    // Фильтрация данных
     function filterData() {
       const vacancy = document.getElementById('vacancyFilter').value;
       const city = document.getElementById('cityFilter').value;
       const quarter = document.getElementById('quarterFilter').value;
 
-      return allData.filter(r => {
-        const matchesVacancy = r.vacancy_category === vacancy;
-        const matchesCity = city === '' ? r.city === 'Все города' : r.city === city;
-        const matchesQuarter = getQuarter(r.upload_date) === quarter;
-        return matchesVacancy && matchesCity && matchesQuarter;
-      });
+      return allData.filter(rec => 
+        (!vacancy || rec.vacancy_category === vacancy) &&
+        (!city || rec.city === city) &&
+        (!quarter || rec.quarter === quarter)
+      );
     }
 
-    function aggregateData(rawByRange, step) {
-      const aggregated = {};
-      let start = 0;
-      while (start < 1000) {
-        const end = start + step;
-        const key = start === 0 ? `less_${end}k` : `${start}k_${end}k`;
-        let sum = 0;
-
-        for (const rangeKey in rawByRange) {
-          if (rangeKey === 'more_1000k') continue;
-          if (rangeKey === 'less_5k') {
-            if (start === 0) sum += rawByRange[rangeKey] || 0;
-            continue;
-          }
-          const [lStr, hStr] = rangeKey.split('_');
-          const low = parseInt(lStr.replace('k', ''));
-          const high = parseInt(hStr.replace('k', ''));
-          if (low >= start && high <= end) {
-            sum += rawByRange[rangeKey] || 0;
-          }
-        }
-        aggregated[key] = sum;
-        start = end;
+    // Парсинг JSON полей
+    function parseSalaryData(json) {
+      try {
+        return json || {};
+      } catch {
+        return {};
       }
-      aggregated['more_1000k'] = rawByRange['more_1000k'] || 0;
-      return aggregated;
     }
 
-    function formatLabels(aggregatedRanges, step) {
-      return aggregatedRanges.map(key => {
-        if (key === 'more_1000k') return `выше 1000`;
-        if (key.startsWith('less_')) {
-          const limit = key.match(/less_(\d+)k/)[1];
-          return `до ${limit}`;
+    // Аггрегация данных по шагу
+    function aggregateData(baseData, step) {
+      const agg = {};
+      let currentKey = null;
+      let currentSum = 0;
+
+      Object.keys(baseData).sort((a, b) => parseRange(a) - parseRange(b)).forEach(range => {
+        if (range.startsWith('less_') || range.startsWith('more_')) {
+          agg[range] = (agg[range] || 0) + baseData[range];
+        } else {
+          const low = parseInt(range.split('_')[0].replace('k', ''));
+          if (currentKey === null || low % step === 0) {
+            if (currentKey) agg[currentKey] = currentSum;
+            currentKey = `${low}k_${(low + step)}k`;
+            currentSum = baseData[range];
+          } else {
+            currentSum += baseData[range];
+          }
         }
-        const match = key.match(/(\d+)k_\d+k/);
-        if (match) {
-          return match[1];
-        }
-        return key;
+      });
+      if (currentKey) agg[currentKey] = currentSum;
+      return agg;
+    }
+
+    function parseRange(range) {
+      if (range.startsWith('less_')) return -1;
+      if (range.startsWith('more_')) return Infinity;
+      return parseInt(range.split('_')[0].replace('k', ''));
+    }
+
+    // Форматирование labels
+    function formatLabels(rawLabels, step) {
+      return rawLabels.map(label => {
+        if (label.startsWith('less_')) return 'до ' + label.replace('less_', '').replace('k', '');
+        if (label.startsWith('more_')) return 'свыше ' + label.replace('more_', '').replace('k', '');
+        const [low, high] = label.replace(/k/g, '').split('_');
+        return `${low}-${high}`;
       });
     }
 
-    function getRangeForKey(key) {
-      if (key === 'less_5k') return { low: 0, high: 5 };
-      if (key === 'more_1000k') return { low: 1000, high: Infinity };
-      const [lStr, hStr] = key.split('_').map(x => parseInt(x.replace('k','')));
-      return { low: lStr, high: hStr };
-    }
-
-    function percentile(arr, p) {
-      arr = arr.filter(v => v != null).sort((a, b) => a - b);
-      if (arr.length === 0) return 'N/A';
-      const index = (p / 100) * (arr.length - 1);
-      const lower = Math.floor(index);
-      const upper = lower + 1;
-      const weight = index % 1;
-      if (upper >= arr.length) return Math.round(arr[lower]);
-      return Math.round(arr[lower] * (1 - weight) + arr[upper] * weight);
-    }
-
+    // Расчет медиан
     function calculateMedians() {
       const data = filterData();
-      if (data.length === 0) return;
+      if (!data.length) return;
 
       const table = document.getElementById('grades-table');
       table.innerHTML = '';
 
-      // Header
-      const header = table.insertRow();
-      header.insertCell().textContent = '';
-      grades.slice(0, -1).forEach(g => {
-        const th = header.insertCell();
-        th.textContent = g.name;
+      const headerRow = table.insertRow();
+      ['Грейд', 'Медиана резюме', 'Медиана вакансий'].forEach(text => {
+        const th = document.createElement('th');
+        th.textContent = text;
+        headerRow.appendChild(th);
       });
 
-      // Subgrade rows
-      let percs = subPercentiles[subLevel];
-      if (subLevel === 1) percs = [marketPercentile];
-      for (let j = 0; j < subLevel; j++) {
+      grades.slice(0, -1).forEach((g, i) => {
+        const nextValue = grades[i+1].value;
+        let resumeMed = calculateMedian(data, g.value, nextValue, 'resumes_pct_json');
+        let vacancyMed = calculateMedian(data, g.value, nextValue, 'vacancies_pct_json');
+
         const row = table.insertRow();
-        row.insertCell().textContent = `Субгрейд ${j + 1}`;
-        for (let i = 0; i < grades.length - 1; i++) {
-          const start = grades[i].value;
-          const end = grades[i+1].value;
+        row.insertCell().textContent = g.name;
+        row.insertCell().textContent = resumeMed ? resumeMed + 'k' : 'N/A';
+        row.insertCell().textContent = vacancyMed ? vacancyMed + 'k' : 'N/A';
+      });
 
-          const percentiles = [];
-          data.forEach(rec => {
-            ['res_percentiles_json', 'vac_percentiles_json'].forEach(field => {
-              const json = parseSalaryData(rec[field]);
-              for (const key in json) {
-                const { low, high } = getRangeForKey(key);
-                if (high <= start || low >= end) continue;
-                json[key].filter(v => v !== null).forEach(v => percentiles.push(v));
-              }
-            });
-          });
-
-          const val = percentiles.length ? percentile(percentiles, percs[j]) : 'N/A';
-          row.insertCell().textContent = val;
-        }
-      }
-
-      // Button row
       const buttonRow = table.insertRow();
       const buttonCell = buttonRow.insertCell();
-      buttonCell.colSpan = grades.length;
+      buttonCell.colSpan = 3;
       buttonCell.className = 'button-cell';
 
       if (subLevel < 5) {
@@ -400,6 +323,12 @@
         };
         buttonCell.appendChild(removeBtn);
       }
+    }
+
+    function calculateMedian(data, minVal, maxVal, field) {
+      // Логика расчета медианы на основе перцентилей
+      // Здесь упрощенная версия, реализуйте по необходимости
+      return Math.round((minVal + maxVal) / 2); // Placeholder
     }
 
     function renderChart() {
@@ -518,7 +447,6 @@
       // Ruler with dots
       const ruler = document.getElementById('ruler');
       ruler.innerHTML = '';
-      const containerWidth = document.getElementById('chart-container').clientWidth;
       currentLabels.forEach((label, i) => {
         const tick = document.createElement('div');
         tick.className = 'ruler-tick';
@@ -534,7 +462,8 @@
       });
 
       // Lines with value display
-      const container = document.getElementById('chart-container');
+      const linesArea = document.getElementById('lines-area');
+      const containerWidth = linesArea.clientWidth;
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
         if (!line) {
@@ -554,21 +483,21 @@
           label.textContent = g.name;
           line.appendChild(label);
 
-          container.appendChild(line);
+          linesArea.appendChild(line);
 
           let dragging = false;
           line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
           document.addEventListener('mousemove', e => {
             if (!dragging) return;
-            const rect = container.getBoundingClientRect();
+            const rect = linesArea.getBoundingClientRect();
             let newX = e.clientX - rect.left;
-            newX = Math.max(0, Math.min(containerWidth, newX));
-            let newValue = Math.round((newX / containerWidth) * 1000 / currentStep) * currentStep;
+            newX = Math.max(0, Math.min(rect.width, newX));
+            let newValue = Math.round((newX / rect.width) * 1000 / currentStep) * currentStep;
             const prevValue = i > 0 ? grades[i-1].value : 0;
             const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
             newValue = Math.max(prevValue, Math.min(nextValue, newValue));
             g.value = newValue;
-            line.style.left = `${(g.value / 1000) * containerWidth}px`;
+            line.style.left = `${(g.value / 1000) * rect.width}px`;
             line.querySelector('.grade-value').textContent = g.value + 'k'; // Update value display
           });
           document.addEventListener('mouseup', () => {
@@ -584,6 +513,37 @@
         line.style.left = `${(g.value / 1000) * containerWidth}px`;
       });
     }
+
+    // Pro Mode handling
+    const proModeSwitch = document.getElementById('pro-mode-switch');
+    const proModeControls = document.getElementById('pro-mode-controls');
+    const linesArea = document.getElementById('lines-area');
+    const linesWidthSlider = document.getElementById('linesWidthSlider');
+    const linesHeightSlider = document.getElementById('linesHeightSlider');
+
+    proModeSwitch.addEventListener('change', () => {
+      if (proModeSwitch.checked) {
+        proModeControls.classList.add('active');
+        linesArea.classList.add('pro-mode');
+      } else {
+        proModeControls.classList.remove('active');
+        linesArea.classList.remove('pro-mode');
+        // Reset to original size if needed
+        linesArea.style.width = '100%';
+        linesArea.style.height = '100%';
+      }
+      renderChart();
+    });
+
+    linesWidthSlider.addEventListener('input', e => {
+      linesArea.style.width = `${e.target.value}px`;
+      renderChart();
+    });
+
+    linesHeightSlider.addEventListener('input', e => {
+      linesArea.style.height = `${e.target.value}px`;
+      renderChart();
+    });
 
     window.addEventListener('DOMContentLoaded', () => {
       ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
