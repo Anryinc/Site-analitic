@@ -4,8 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Зарплатный анализ по грейдам</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 0 12px; background: #f9f9fb; }
     h1 { text-align: center; color: #333; }
@@ -13,14 +11,15 @@
     .controls { margin: 20px 0; text-align: center; }
     .controls label { margin: 0 10px; font-weight: bold; }
     select { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
-    #chart-container { position: relative; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: visible; }
-    #chart { height: 100%; width: 100%; }
-    #ruler { position: absolute; bottom: 0; left: 0; width: 100%; height: 50px; background: #222; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-    .grade-line { position: absolute; width: 4px; height: calc(100% - 50px); top: 0; left: 0; background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    #chart-container { position: relative; display: flex; width: 100%; max-width: 1100px; height: 500px; margin: 30px auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+    .bin { flex: 1; position: relative; height: 100%; border-right: 1px solid #ddd; }
+    .bin:last-child { border-right: none; }
+    .vacancy-bar { position: absolute; bottom: 50px; left: 10%; width: 30%; background-color: rgba(255,99,132,0.6); }
+    .resume-bar { position: absolute; bottom: 50px; left: 60%; width: 30%; background-color: rgba(54,162,235,0.1); border: 1px solid rgba(54,162,235,0.9); }
+    .bin-label { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%) rotate(90deg); font-size: 11px; color: #aaa; white-space: nowrap; }
+    .grade-line { position: absolute; top: 0; width: 4px; height: calc(100% - 50px + 40px); background-color: #000; cursor: ew-resize; z-index: 10; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
-    .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
-    .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
-    .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
+    .grade-label { position: absolute; bottom: -35px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
@@ -34,8 +33,8 @@
     #pro-mode-controls { display: none; text-align: center; }
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: block; margin: 5px 0; }
-    #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
-    #lines-area.pro-mode { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
+    .legend { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 10px 0; }
+    .legend div { width: 20px; height: 20px; }
   </style>
 </head>
 <body>
@@ -79,6 +78,11 @@
     </label>
   </div>
 
+  <div class="legend">
+    <div style="background-color: rgba(54,162,235,0.9);"></div> Резюме %
+    <div style="background-color: rgba(255,99,132,0.6);"></div> Вакансии %
+  </div>
+
   <label style="display: block; text-align: center; margin-bottom: 10px;">
     <input type="checkbox" id="pro-mode-switch"> Pro Mode (настройка зоны линий)
   </label>
@@ -88,18 +92,12 @@
     <label>Высота зоны: <input type="range" id="linesHeightSlider" min="300" max="800" value="500" step="10"></label>
   </div>
 
-  <div id="chart-container">
-    <div id="lines-area">
-      <div id="ruler"></div>
-    </div>
-    <canvas id="chart"></canvas>
-  </div>
+  <div id="chart-container"></div>
 
   <table id="grades-table"></table>
 
   <script>
     let allData = [];
-    let chartInstance = null;
     let subLevel = 1;
     let marketPercentile = 50;
     let currentStep = 20;
@@ -168,7 +166,7 @@
         const res = await fetch('/api/analytics?limit=500');
         allData = await res.json();
         populateFilters();
-        renderChart();
+        renderVisualization();
         calculateMedians();
       } catch (e) {
         alert('Ошибка загрузки данных: ' + e.message);
@@ -246,7 +244,7 @@
           const low = parseInt(range.split('_')[0].replace('k', ''));
           if (currentKey === null || low % step === 0) {
             if (currentKey) agg[currentKey] = currentSum;
-            currentKey = `${low}k_${(low + step)}k`;
+            currentKey = `${low}k_${low + step}k`;
             currentSum = baseData[range];
           } else {
             currentSum += baseData[range];
@@ -271,6 +269,12 @@
         const [low, high] = label.replace(/k/g, '').split('_');
         return `${low}-${high}`;
       });
+    }
+
+    function getStart(raw) {
+      if (raw.startsWith('less_')) return 0;
+      if (raw.startsWith('more_')) return 1000;
+      return parseInt(raw.split('_')[0].replace('k', ''));
     }
 
     // Расчет медиан
@@ -309,6 +313,7 @@
         addBtn.textContent = '+ добавить субгрейд';
         addBtn.onclick = () => {
           subLevel++;
+          updatePercentileState();
           calculateMedians();
         };
         buttonCell.appendChild(addBtn);
@@ -319,6 +324,7 @@
         removeBtn.textContent = '- убрать субгрейд';
         removeBtn.onclick = () => {
           subLevel--;
+          updatePercentileState();
           calculateMedians();
         };
         buttonCell.appendChild(removeBtn);
@@ -326,12 +332,11 @@
     }
 
     function calculateMedian(data, minVal, maxVal, field) {
-      // Логика расчета медианы на основе перцентилей
-      // Здесь упрощенная версия, реализуйте по необходимости
+      // Реализуйте логику расчета медианы здесь
       return Math.round((minVal + maxVal) / 2); // Placeholder
     }
 
-    function renderChart() {
+    function renderVisualization() {
       const data = filterData();
 
       const baseResumes = {};
@@ -346,7 +351,7 @@
       });
 
       const sortedBase = Array.from(baseRanges).sort((a, b) => {
-        const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
+        const order = ['less_5k', ...Array.from({length: 200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
         return order.indexOf(a) - order.indexOf(b);
       });
 
@@ -370,100 +375,60 @@
 
       const aggResumes = aggregateData(baseResumes, currentStep);
       const aggVacancies = aggregateData(baseVacancies, currentStep);
-      const rawLabels = Object.keys(aggResumes);
+      const rawLabels = Object.keys(aggResumes).sort((a, b) => getStart(a) - getStart(b));
       currentLabels = formatLabels(rawLabels, currentStep);
 
-      // Sort grades to prevent crossing
+      const container = document.getElementById('chart-container');
+      container.innerHTML = '';
+
+      const numBins = rawLabels.length;
+      const binWidth = container.clientWidth / numBins;
+
+      let maxP = 0;
+      rawLabels.forEach(k => {
+        maxP = Math.max(maxP, aggResumes[k] || 0, aggVacancies[k] || 0);
+      });
+      const barHeight = container.clientHeight - 50; // space for labels
+      const scale = maxP > 0 ? barHeight / maxP : 0;
+
+      rawLabels.forEach((raw, i) => {
+        const bin = document.createElement('div');
+        bin.className = 'bin';
+        bin.style.width = `${binWidth}px`;
+        bin.dataset.raw = raw;
+        bin.dataset.start = getStart(raw);
+
+        const vBar = document.createElement('div');
+        vBar.className = 'vacancy-bar';
+        vBar.style.height = `${(aggVacancies[raw] || 0) * scale}px`;
+        bin.appendChild(vBar);
+
+        const rBar = document.createElement('div');
+        rBar.className = 'resume-bar';
+        rBar.style.height = `${(aggResumes[raw] || 0) * scale}px`;
+        bin.appendChild(rBar);
+
+        const label = document.createElement('div');
+        label.className = 'bin-label';
+        label.textContent = currentLabels[i];
+        bin.appendChild(label);
+
+        container.appendChild(bin);
+      });
+
+      // Set backgrounds
       grades.sort((a, b) => a.value - b.value);
-
-      // Annotations for fills (using grade colors)
-      const annotations = [];
-      for (let i = 0; i < grades.length - 1; i++) {
-        let startIdx = currentLabels.findIndex(l => {
-          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
-          return val >= grades[i].value;
-        });
-        let endIdx = currentLabels.findIndex(l => {
-          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
-          return val >= grades[i+1].value;
-        });
-        if (startIdx === -1) startIdx = 0;
-        if (endIdx === -1) endIdx = currentLabels.length - 1;
-        annotations.push({
-          type: 'box',
-          xMin: startIdx - 0.3,
-          xMax: endIdx + 0.3,
-          yMin: 0,
-          yMax: 'max',
-          backgroundColor: grades[i].color + '2A',
-          borderWidth: 0
-        });
-      }
-
-      const ctx = document.getElementById('chart').getContext('2d');
-      if (chartInstance) chartInstance.destroy();
-
-      chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: currentLabels,
-          datasets: [
-            {
-              label: 'Резюме %',
-              data: Object.values(aggResumes),
-              type: 'line',
-              borderColor: 'rgba(54,162,235,0.9)',
-              backgroundColor: 'rgba(54,162,235,0.1)',
-              tension: 0.2,
-              fill: true,
-              pointRadius: 1,
-              borderWidth: 1,
-              order: 1
-            },
-            {
-              label: 'Вакансии %',
-              data: Object.values(aggVacancies),
-              type: 'bar',
-              backgroundColor: 'rgba(255,99,132,0.6)',
-              borderColor: 'rgba(255,99,132,1)',
-              borderWidth: 1,
-              barThickness: 10,
-              order: 2
-            }
-          ]
-        },
-        options: {
-          plugins: { legend: { position: 'top' }, annotation: { annotations } },
-          scales: { 
-            x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } }, 
-            y: { beginAtZero: true, ticks: { display: false } }
-          },
-          interaction: { mode: 'index', intersect: false },
-          responsive: true,
-          maintainAspectRatio: false
+      const bins = container.querySelectorAll('.bin');
+      let currentGrade = 0;
+      bins.forEach(bin => {
+        const start = parseInt(bin.dataset.start);
+        while (currentGrade < grades.length - 1 && start >= grades[currentGrade + 1].value) currentGrade++;
+        if (currentGrade < grades.length - 1) {
+          bin.style.backgroundColor = grades[currentGrade].color + '2A';
         }
       });
 
-      // Ruler with dots
-      const ruler = document.getElementById('ruler');
-      ruler.innerHTML = '';
-      currentLabels.forEach((label, i) => {
-        const tick = document.createElement('div');
-        tick.className = 'ruler-tick';
-        tick.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
-        tick.textContent = label;
-        ruler.appendChild(tick);
-
-        // Add dot
-        const dot = document.createElement('div');
-        dot.className = 'ruler-dot';
-        dot.style.left = `${(i / (currentLabels.length - 1)) * 100}%`;
-        ruler.appendChild(dot);
-      });
-
-      // Lines with value display
-      const linesArea = document.getElementById('lines-area');
-      const containerWidth = linesArea.clientWidth;
+      // Add or update grade lines
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
         if (!line) {
@@ -475,7 +440,6 @@
 
           const valueDisplay = document.createElement('div');
           valueDisplay.className = 'grade-value';
-          valueDisplay.textContent = g.value + 'k';
           line.appendChild(valueDisplay);
 
           const label = document.createElement('div');
@@ -483,75 +447,130 @@
           label.textContent = g.name;
           line.appendChild(label);
 
-          linesArea.appendChild(line);
+          container.appendChild(line);
 
           let dragging = false;
-          line.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+          line.addEventListener('mousedown', e => {
+            dragging = true;
+            e.preventDefault();
+          });
           document.addEventListener('mousemove', e => {
             if (!dragging) return;
-            const rect = linesArea.getBoundingClientRect();
+            const rect = container.getBoundingClientRect();
             let newX = e.clientX - rect.left;
             newX = Math.max(0, Math.min(rect.width, newX));
-            let newValue = Math.round((newX / rect.width) * 1000 / currentStep) * currentStep;
-            const prevValue = i > 0 ? grades[i-1].value : 0;
-            const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
-            newValue = Math.max(prevValue, Math.min(nextValue, newValue));
-            g.value = newValue;
-            line.style.left = `${(g.value / 1000) * rect.width}px`;
-            line.querySelector('.grade-value').textContent = g.value + 'k'; // Update value display
+            line.style.left = `${newX}px`;
           });
           document.addEventListener('mouseup', () => {
             if (dragging) {
               dragging = false;
-              renderChart();
+              // Snap to closest bin start
+              const bins = container.querySelectorAll('.bin');
+              let closestIndex = 0;
+              let closestDist = Infinity;
+              let cumX = 0;
+              bins.forEach((b, j) => {
+                const dist = Math.abs(cumX - parseFloat(line.style.left));
+                if (dist < closestDist) {
+                  closestDist = dist;
+                  closestIndex = j;
+                }
+                cumX += b.clientWidth;
+              });
+              g.value = parseInt(bins[closestIndex].dataset.start);
+              // Bounds
+              const prevValue = i > 0 ? grades[i - 1].value : 0;
+              const nextValue = i < grades.length - 1 ? grades[i + 1].value : Infinity;
+              g.value = Math.max(prevValue, Math.min(nextValue, g.value));
+              // Set left to the snapped position
+              cumX = 0;
+              for (let j = 0; j < bins.length; j++) {
+                if (parseInt(bins[j].dataset.start) === g.value) {
+                  line.style.left = `${cumX}px`;
+                  break;
+                }
+                cumX += bins[j].clientWidth;
+              }
+              // Update value display
+              line.querySelector('.grade-value').textContent = g.value + 'k';
+              renderVisualization();
               calculateMedians();
             }
           });
         } else {
           line.querySelector('.grade-value').textContent = g.value + 'k';
         }
-        line.style.left = `${(g.value / 1000) * containerWidth}px`;
+        // Set initial left
+        let cumX = 0;
+        const bins = container.querySelectorAll('.bin');
+        let found = false;
+        for (let j = 0; j < bins.length; j++) {
+          if (parseInt(bins[j].dataset.start) === g.value) {
+            line.style.left = `${cumX}px`;
+            found = true;
+            break;
+          }
+          cumX += bins[j].clientWidth;
+        }
+        if (!found) {
+          // Snap to closest if not found (e.g., after step change)
+          let closestIndex = 0;
+          let closestDist = Infinity;
+          cumX = 0;
+          bins.forEach((b, j) => {
+            const binStart = parseInt(b.dataset.start);
+            const dist = Math.abs(binStart - g.value);
+            if (dist < closestDist) {
+              closestDist = dist;
+              closestIndex = j;
+            }
+            cumX += b.clientWidth;
+          });
+          g.value = parseInt(bins[closestIndex].dataset.start);
+          cumX = 0;
+          for (let j = 0; j < closestIndex; j++) {
+            cumX += bins[j].clientWidth;
+          }
+          line.style.left = `${cumX}px`;
+          line.querySelector('.grade-value').textContent = g.value + 'k';
+        }
       });
     }
 
     // Pro Mode handling
     const proModeSwitch = document.getElementById('pro-mode-switch');
     const proModeControls = document.getElementById('pro-mode-controls');
-    const linesArea = document.getElementById('lines-area');
     const linesWidthSlider = document.getElementById('linesWidthSlider');
     const linesHeightSlider = document.getElementById('linesHeightSlider');
 
     proModeSwitch.addEventListener('change', () => {
       if (proModeSwitch.checked) {
         proModeControls.classList.add('active');
-        linesArea.classList.add('pro-mode');
       } else {
         proModeControls.classList.remove('active');
-        linesArea.classList.remove('pro-mode');
-        // Reset to original size if needed
-        linesArea.style.width = '100%';
-        linesArea.style.height = '100%';
       }
-      renderChart();
+      renderVisualization();
     });
 
     linesWidthSlider.addEventListener('input', e => {
-      linesArea.style.width = `${e.target.value}px`;
-      renderChart();
+      document.getElementById('chart-container').style.maxWidth = `${e.target.value}px`;
+      document.getElementById('chart-container').style.width = `${e.target.value}px`;
+      renderVisualization();
     });
 
     linesHeightSlider.addEventListener('input', e => {
-      linesArea.style.height = `${e.target.value}px`;
-      renderChart();
+      document.getElementById('chart-container').style.height = `${e.target.value}px`;
+      renderVisualization();
     });
 
     window.addEventListener('DOMContentLoaded', () => {
-      ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
+      ['vacancyFilter', 'cityFilter', 'quarterFilter', 'stepFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => {
-          renderChart();
+          renderVisualization();
           calculateMedians();
         });
       });
+      updatePercentileState();
       loadData();
     });
   </script>
