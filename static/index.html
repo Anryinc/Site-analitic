@@ -21,7 +21,7 @@
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); }
     .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
-    #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    #grades-table { width: 100%; border-collapse: collapse; margin-top: 40px; } /* Increased margin-top */
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
     #grades-table .button-cell { text-align: left; padding-left: 20px; }
@@ -34,8 +34,9 @@
     #pro-mode-controls { display: none; text-align: center; }
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: block; margin: 5px 0; }
-    #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
-    .pro-mode #lines-area { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
+    input[type="range"] { width: 300px; }
+    #lines-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
+    #lines-area.pro-mode { pointer-events: auto; border: 2px dashed #2196F3; resize: both; overflow: visible; }
   </style>
 </head>
 <body>
@@ -89,8 +90,8 @@
   </div>
 
   <div id="chart-container">
-    <div id="lines-area"></div>
     <canvas id="chart"></canvas>
+    <div id="lines-area"></div>
     <div id="ruler"></div>
   </div>
 
@@ -534,7 +535,7 @@
       });
 
       // Lines with value display
-      const container = document.getElementById('chart-container');
+      const container = document.getElementById('lines-area'); // Changed to lines-area
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
         if (!line) {
@@ -562,13 +563,13 @@
             if (!dragging) return;
             const rect = container.getBoundingClientRect();
             let newX = e.clientX - rect.left;
-            newX = Math.max(0, Math.min(containerWidth, newX));
-            let newValue = Math.round((newX / containerWidth) * 1000 / currentStep) * currentStep;
+            newX = Math.max(0, Math.min(rect.width, newX));
+            let newValue = Math.round((newX / rect.width) * 1000 / currentStep) * currentStep;
             const prevValue = i > 0 ? grades[i-1].value : 0;
             const nextValue = i < grades.length - 1 ? grades[i+1].value : Infinity;
             newValue = Math.max(prevValue, Math.min(nextValue, newValue));
             g.value = newValue;
-            line.style.left = `${(g.value / 1000) * containerWidth}px`;
+            line.style.left = `${(g.value / 1000) * rect.width}px`;
             line.querySelector('.grade-value').textContent = g.value + 'k'; // Update value display
           });
           document.addEventListener('mouseup', () => {
@@ -581,7 +582,7 @@
         } else {
           line.querySelector('.grade-value').textContent = g.value + 'k';
         }
-        line.style.left = `${(g.value / 1000) * containerWidth}px`;
+        line.style.left = `${(g.value / 1000) * container.clientWidth}px`;
       });
     }
 
