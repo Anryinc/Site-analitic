@@ -24,37 +24,37 @@
       background: white; 
       border-radius: 12px; 
       box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
-      overflow: visible; /* Разрешаем линейке выходить за пределы */
+      overflow: visible; /* Разрешаем линейке выходить за пределы при настройке */
     }
     
-    /* График лежит на заднем фоне */
+    /* График лежит "внизу" */
     #chart { 
         height: calc(100% - 50px); 
         width: 100%; 
         display: block;
     }
 
-    /* --- НОВЫЙ WRAPPER ДЛЯ СИСТЕМЫ ЛИНЕЙКИ --- */
-    /* Именно этот блок мы будем ресайзить в Pro Mode */
+    /* --- ГЛАВНАЯ ОБЕРТКА ДЛЯ RULER И LINES --- */
+    /* Именно этот блок мы растягиваем в Pro Mode */
     #ruler-wrapper {
         position: absolute;
         top: 0;
         left: 0;
-        width: 100%; /* По умолчанию совпадает с графиком */
+        width: 100%; /* По умолчанию 100%, меняется слайдерами */
         height: 100%;
         z-index: 10;
-        pointer-events: none; /* Пропускаем клики сквозь пустые места */
+        pointer-events: none; /* Чтобы клики проходили сквозь пустоту к графику, если нужно */
     }
     
-    /* Область для вертикальных линий грейдов */
+    /* Область, где ездят линии грейдов */
     #lines-area {
         position: relative;
         width: 100%;
-        height: calc(100% - 50px); /* Занимает место над линейкой */
-        pointer-events: auto; /* Включаем клики для перетаскивания линий */
+        height: calc(100% - 50px); 
+        pointer-events: auto; /* Включаем, чтобы можно было хватать линии */
     }
 
-    /* Сама черная линейка */
+    /* Сама черная линейка снизу */
     #ruler { 
       height: 50px; 
       width: 100%;
@@ -64,7 +64,7 @@
       border-bottom-right-radius: 12px;
     }
 
-    /* Элементы линий и линейки */
+    /* Элементы интерфейса */
     .grade-line { position: absolute; width: 4px; height: 100%; top: 0; background-color: #000; cursor: ew-resize; z-index: 20; border-radius: 2px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
     .grade-value { position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
     .grade-label { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; }
@@ -72,7 +72,6 @@
     .ruler-tick { position: absolute; bottom: 8px; font-size: 11px; color: #aaa; transform: translateX(-50%); white-space: nowrap; }
     .ruler-dot { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: #aaa; border-radius: 50%; }
     
-    /* Таблица и кнопки */
     #grades-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     #grades-table th, #grades-table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
     #grades-table th { background: #f2f2f2; }
@@ -86,12 +85,9 @@
     .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 130%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 13px; }
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
     
-    /* Pro Mode панель */
     #pro-mode-controls { display: none; text-align: center; background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 10px auto; max-width: 700px; border: 1px solid #2196F3; }
     #pro-mode-controls.active { display: block; }
     #pro-mode-controls label { display: inline-block; margin: 0 15px; font-weight: bold; }
-    
-    /* Индикатор Pro Mode */
     .pro-active-border { border: 2px dashed #FF9800; box-sizing: border-box; }
   </style>
 </head>
@@ -136,16 +132,16 @@
   </div>
 
   <label style="display: block; text-align: center; margin-bottom: 10px; cursor: pointer; user-select: none;">
-    <input type="checkbox" id="pro-mode-switch"> <strong>Pro Mode</strong> (Ручная настройка масштаба линейки)
+    <input type="checkbox" id="pro-mode-switch"> <strong>Pro Mode</strong> (Ручная подгонка линейки)
   </label>
 
   <div id="pro-mode-controls">
-    <div style="margin-bottom:10px; color:#555;">Тяните ползунки, чтобы подогнать деления линейки под столбцы графика</div>
+    <div style="margin-bottom:10px; color:#555;">Тяните ползунки, чтобы подогнать деления линейки (и линий) под столбцы графика.</div>
     <label>Ширина (Width): <input type="range" id="wrapperWidthSlider" min="500" max="2000" value="1100" step="1"></label>
     <label>Высота (Height): <input type="range" id="wrapperHeightSlider" min="300" max="800" value="500" step="1"></label>
     <br><br>
-    <label>Сдвиг влево/вправо (Offset X): <input type="range" id="wrapperLeftSlider" min="-200" max="200" value="0" step="1"></label>
-    <button onclick="resetRulerWrapper()" style="background:#666; font-size:12px; margin-left:15px;">Сброс</button>
+    <label>Сдвиг (Offset X): <input type="range" id="wrapperLeftSlider" min="-200" max="200" value="0" step="1"></label>
+    <button onclick="resetRulerWrapper()" style="background:#666; font-size:12px; margin-left:15px; color:white;">Сброс</button>
   </div>
 
   <div id="chart-container">
@@ -206,7 +202,7 @@
       }
     });
 
-    // Percentile Select Logic
+    // Управление перцентилем
     const percentileSelect = document.getElementById('percentileSelect');
     const percentileTooltip = document.getElementById('percentileTooltip');
 
@@ -217,7 +213,6 @@
       percentileTooltip.textContent = isSingle
         ? (isMedian ? '' : 'доступно только при 50-м перцентиле')
         : 'доступно только при 1 субгрейде';
-      
       const addBtn = document.querySelector('button[textContent*="+ добавить субгрейд"]');
       if (addBtn) addBtn.disabled = !isMedian;
     }
@@ -231,12 +226,9 @@
     // --- PRO MODE LOGIC ---
     const proModeSwitch = document.getElementById('pro-mode-switch');
     const proModeControls = document.getElementById('pro-mode-controls');
-    
-    // Элементы
     const chartContainer = document.getElementById('chart-container');
-    const rulerWrapper = document.getElementById('ruler-wrapper'); // Главная обертка
+    const rulerWrapper = document.getElementById('ruler-wrapper'); 
     
-    // Слайдеры
     const widthSlider = document.getElementById('wrapperWidthSlider');
     const heightSlider = document.getElementById('wrapperHeightSlider');
     const leftSlider = document.getElementById('wrapperLeftSlider');
@@ -247,14 +239,19 @@
       rulerWrapper.classList.toggle('pro-active-border', isActive);
       
       if (isActive) {
-        // Init sliders values
-        widthSlider.value = rulerWrapper.clientWidth || chartContainer.clientWidth;
-        heightSlider.value = rulerWrapper.clientHeight || 500;
+        // Синхронизация слайдеров с текущим состоянием
+        widthSlider.value = rulerWrapper.style.width && rulerWrapper.style.width !== '100%' 
+            ? parseInt(rulerWrapper.style.width) 
+            : chartContainer.clientWidth;
+            
+        heightSlider.value = rulerWrapper.style.height && rulerWrapper.style.height !== '100%'
+            ? parseInt(rulerWrapper.style.height)
+            : chartContainer.clientHeight;
+            
         leftSlider.value = parseInt(rulerWrapper.style.left) || 0;
       }
     });
 
-    // Функция обновления стилей обертки
     function updateWrapper() {
       const w = widthSlider.value;
       const h = heightSlider.value;
@@ -264,13 +261,11 @@
       rulerWrapper.style.height = h + 'px';
       rulerWrapper.style.left = l + 'px';
       
-      // Сохраняем
       localStorage.setItem('rw_width', w);
       localStorage.setItem('rw_height', h);
       localStorage.setItem('rw_left', l);
       
-      // Перерисовка нужна, чтобы обновить положение точек на линейке и линий грейдов
-      // (так как они рассчитываются в % или пикселях относительно ширины родителя)
+      // Перерисовка DOM элементов (линейки и линий) под новый размер
       renderInterfaceElementsOnly(); 
     }
 
@@ -278,7 +273,6 @@
     heightSlider.addEventListener('input', updateWrapper);
     leftSlider.addEventListener('input', updateWrapper);
 
-    // Загрузка сохраненных настроек
     const savedW = localStorage.getItem('rw_width');
     const savedH = localStorage.getItem('rw_height');
     const savedL = localStorage.getItem('rw_left');
@@ -298,10 +292,10 @@
       heightSlider.value = 500;
       leftSlider.value = 0;
       renderInterfaceElementsOnly();
-      alert('Настройки сброшены. Линейка совпадает с контейнером.');
+      alert('Настройки сброшены.');
     }
 
-    // --- DATA HANDLING ---
+    // --- DATA & HELPER FUNCTIONS ---
     function getQuarter(dateStr) {
       const d = new Date(dateStr);
       if (isNaN(d)) return '';
@@ -312,12 +306,12 @@
       try {
         const res = await fetch('/api/analytics?limit=1000');
         if (res.ok) allData = await res.json();
-        else allData = []; // Fallback empty
+        else allData = []; 
       } catch(e) { allData = []; }
       
       fillFilters(allData);
-      renderChart(); // Рисуем график
-      renderInterfaceElementsOnly(); // Рисуем линейку и линии
+      renderChart(); // Рисуем график и инициализируем labels
+      renderInterfaceElementsOnly(); // Рисуем линейку поверх
       calculateMedians();
       updatePercentileState();
     }
@@ -340,7 +334,10 @@
       cityFilter.innerHTML = '<option value="">Все</option>' + sortedCities.map(v => `<option value="${v}">${v}</option>`).join('');
 
       const quarterFilter = document.getElementById('quarterFilter');
-      const sortedQuarters = Array.from(quarterSet).sort().reverse();
+      const sortedQuarters = Array.from(quarterSet).sort((a,b)=>{
+         const [yA,qA] = a.split(' Q'); const [yB,qB] = b.split(' Q');
+         return (yB-yA)||(qB-qA);
+      });
       quarterFilter.innerHTML = sortedQuarters.map(v => `<option value="${v}">${v}</option>`).join('');
       if (sortedQuarters.length > 0) quarterFilter.value = sortedQuarters[0];
     }
@@ -353,7 +350,7 @@
       const quarter = document.getElementById('quarterFilter').value;
       return allData.filter(r => {
         return r.vacancy_category === vacancy &&
-               (city === '' || r.city === city) &&
+               (city === '' || r.city === 'Все города' || r.city === city) &&
                getQuarter(r.upload_date) === quarter;
       });
     }
@@ -365,12 +362,18 @@
         const end = start + step;
         const key = start === 0 ? `less_${end}k` : `${start}k_${end}k`;
         let sum = 0;
-        for (const rKey in rawByRange) {
-          if (rKey === 'more_1000k') continue;
-          if (rKey === 'less_5k') { if(start===0) sum += rawByRange[rKey]||0; continue; }
-          const [l, h] = rKey.split('_').map(x => parseInt(x.replace('k','')) || 0);
-          // Simple overlap check logic
-          if (l >= start && h <= end) sum += rawByRange[rKey] || 0; 
+        for (const rangeKey in rawByRange) {
+          if (rangeKey === 'more_1000k') continue;
+          if (rangeKey === 'less_5k') {
+            if (start === 0) sum += rawByRange[rangeKey] || 0;
+            continue;
+          }
+          const [lStr, hStr] = rangeKey.split('_');
+          const low = parseInt(lStr.replace('k', ''));
+          const high = parseInt(hStr.replace('k', ''));
+          if (low >= start && high <= end) {
+            sum += rawByRange[rangeKey] || 0;
+          }
         }
         aggregated[key] = sum;
         start = end;
@@ -379,84 +382,148 @@
       return aggregated;
     }
 
-    function formatLabels(aggregatedRanges) {
+    function formatLabels(aggregatedRanges, step) {
       return aggregatedRanges.map(key => {
-        if (key === 'more_1000k') return `>1000`;
-        if (key.startsWith('less_')) return `до ${key.match(/\d+/)[0]}`;
-        const match = key.match(/(\d+)k/);
-        return match ? match[1] : key;
+        if (key === 'more_1000k') return `выше 1000`;
+        if (key.startsWith('less_')) {
+          const limit = key.match(/less_(\d+)k/)[1];
+          return `до ${limit}`;
+        }
+        const match = key.match(/(\d+)k_\d+k/);
+        if (match) return match[1];
+        return key;
       });
     }
 
-    // --- CHART & INTERFACE RENDERERS ---
+    // --- RENDER FUNCTIONS ---
 
-    // 1. Рисуем ТОЛЬКО график (Canvas)
+    // 1. График (Canvas) - содержит реальные данные
     function renderChart() {
       const data = filterData();
-      const baseResumes = {}, baseVacancies = {}, baseRanges = new Set();
+      
+      const baseResumes = {};
+      const baseVacancies = {};
+      const baseRanges = new Set();
 
       data.forEach(record => {
-        const r = parseSalaryData(record.resumes_pct_json);
-        const v = parseSalaryData(record.vacancies_pct_json);
-        Object.keys(r).forEach(k => baseRanges.add(k));
-        Object.keys(v).forEach(k => baseRanges.add(k));
+        const resumes = parseSalaryData(record.resumes_pct_json);
+        const vacancies = parseSalaryData(record.vacancies_pct_json);
+        Object.keys(resumes).forEach(k => baseRanges.add(k));
+        Object.keys(vacancies).forEach(k => baseRanges.add(k));
       });
-      
-      // Сортировка диапазонов и агрегация (упрощено для примера)
-      const sortedBase = Array.from(baseRanges); // В реальности тут нужна сортировка как у вас была
-      
-      // ... Логика агрегации данных для Chart.js ...
-      // Для краткости я использую currentLabels, вычисленные в aggregateData
-      // В полном коде здесь ваша логика расчета aggResumes/aggVacancies
-      
-      // ВАЖНО: Мы пересчитываем labels здесь
+
+      const sortedBase = Array.from(baseRanges).sort((a, b) => {
+        const order = ['less_5k', ...Array.from({length:200}, (_, i) => `${(i+1)*5}k_${(i+2)*5}k`), 'more_1000k'];
+        return order.indexOf(a) - order.indexOf(b);
+      });
+
+      sortedBase.forEach(range => {
+        let rSum = 0, rCnt = 0, vSum = 0, vCnt = 0;
+        data.forEach(rec => {
+          if (rec.resumes_pct_json && rec.resumes_pct_json[range] !== undefined) {
+            rSum += rec.resumes_pct_json[range];
+            rCnt++;
+          }
+          if (rec.vacancies_pct_json && rec.vacancies_pct_json[range] !== undefined) {
+            vSum += rec.vacancies_pct_json[range];
+            vCnt++;
+          }
+        });
+        baseResumes[range] = rCnt ? rSum / rCnt : 0;
+        baseVacancies[range] = vCnt ? vSum / vCnt : 0;
+      });
+
       currentStep = parseInt(document.getElementById('stepFilter').value) || 20;
-      
-      // --- (Имитация агрегации чтобы получить Labels) ---
-      const dummyKeys = [];
-      let s = 0; 
-      while(s<1000) { 
-          dummyKeys.push(s===0 ? `less_${s+currentStep}k` : `${s}k_${s+currentStep}k`); 
-          s+=currentStep; 
+
+      const aggResumes = aggregateData(baseResumes, currentStep);
+      const aggVacancies = aggregateData(baseVacancies, currentStep);
+      const rawLabels = Object.keys(aggResumes);
+      currentLabels = formatLabels(rawLabels, currentStep);
+
+      // Аннотации (цветные зоны) на самом графике
+      grades.sort((a, b) => a.value - b.value);
+      const annotations = [];
+      for (let i = 0; i < grades.length - 1; i++) {
+        let startIdx = currentLabels.findIndex(l => {
+          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
+          return val >= grades[i].value;
+        });
+        let endIdx = currentLabels.findIndex(l => {
+          const val = l.startsWith('до') ? 0 : parseInt(l) || Infinity;
+          return val >= grades[i+1].value;
+        });
+        if (startIdx === -1) startIdx = 0;
+        if (endIdx === -1) endIdx = currentLabels.length - 1;
+        annotations.push({
+          type: 'box',
+          xMin: startIdx - 0.3,
+          xMax: endIdx + 0.3,
+          yMin: 0,
+          yMax: 'max',
+          backgroundColor: grades[i].color + '2A',
+          borderWidth: 0
+        });
       }
-      dummyKeys.push('more_1000k');
-      currentLabels = formatLabels(dummyKeys);
-      // -----------------------------------------------
 
       const ctx = document.getElementById('chart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
 
-      // Chart config
       chartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
           labels: currentLabels,
           datasets: [
-            // Dummy data placeholders - вставьте сюда свои aggResumes/aggVacancies
-            { label: 'Резюме %', data: currentLabels.map(()=>Math.random()*10), type: 'line', borderColor: '#36A2EB', fill:true },
-            { label: 'Вакансии %', data: currentLabels.map(()=>Math.random()*10), backgroundColor: '#FF6384' }
+            {
+              label: 'Резюме %',
+              data: Object.values(aggResumes),
+              type: 'line',
+              borderColor: 'rgba(54,162,235,0.9)',
+              backgroundColor: 'rgba(54,162,235,0.1)',
+              tension: 0.2,
+              fill: true,
+              pointRadius: 1,
+              borderWidth: 1,
+              order: 1
+            },
+            {
+              label: 'Вакансии %',
+              data: Object.values(aggVacancies),
+              type: 'bar',
+              backgroundColor: 'rgba(255,99,132,0.6)',
+              borderColor: 'rgba(255,99,132,1)',
+              borderWidth: 1,
+              barThickness: 10,
+              order: 2
+            }
           ]
         },
         options: {
+          plugins: { legend: { position: 'top' }, annotation: { annotations } },
+          scales: { 
+            // Ось X показываем, но метки можем скрыть, если линейка их заменяет, 
+            // но в данном случае оставим скрытыми тики, так как у нас свой Ruler
+            x: { 
+                ticks: { display: false }, // Скрываем подписи оси X у графика, так как есть Ruler
+                grid: { display: false }
+            }, 
+            y: { beginAtZero: true, ticks: { display: false } }
+          },
+          interaction: { mode: 'index', intersect: false },
           responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position:'top' } },
-          scales: { x: { display: false }, y: { display:false } } // Скрываем оси графика, у нас есть своя линейка!
+          maintainAspectRatio: false
         }
       });
     }
 
-    // 2. Рисуем ТОЛЬКО Линейку и Грейды (DOM элементы)
-    // Эта функция вызывается при ресайзе слайдеров Pro Mode
+    // 2. Линейка и линии (DOM) - зависят от Pro Mode wrapper
     function renderInterfaceElementsOnly() {
       if (!currentLabels.length) return;
       
       const ruler = document.getElementById('ruler');
-      const linesArea = document.getElementById('lines-area'); // Контейнер для линий
-      const wrapper = document.getElementById('ruler-wrapper'); // Текущая ширина "мира"
-      const wrapperWidth = wrapper.clientWidth;
+      const linesArea = document.getElementById('lines-area');
+      const wrapperWidth = linesArea.clientWidth; // Текущая ширина "мира"
 
-      // А. Рисуем деления линейки
+      // Отрисовка делений
       ruler.innerHTML = ''; 
       currentLabels.forEach((label, i) => {
         const pct = (i / (currentLabels.length - 1)) * 100;
@@ -473,10 +540,7 @@
         ruler.appendChild(dot);
       });
 
-      // Б. Рисуем и обновляем Линии Грейдов
-      // Очищаем старые, если нужно, или обновляем позицию
-      // Для простоты - пересоздадим (или найдем существующие)
-      
+      // Отрисовка линий грейдов
       grades.forEach((g, i) => {
         let line = document.getElementById(`grade-line-${g.name}`);
         
@@ -495,50 +559,42 @@
           lblDiv.textContent = g.name;
           line.appendChild(lblDiv);
           
-          // Добавляем линию в LINES-AREA (внутри wrapper'а)
           linesArea.appendChild(line);
 
-          // Logic Drag & Drop
+          // Drag logic
           let isDragging = false;
           line.addEventListener('mousedown', e => { isDragging = true; e.preventDefault(); e.stopPropagation(); });
           
           document.addEventListener('mousemove', e => {
             if (!isDragging) return;
-            
-            // Важно: координаты считаем относительно lines-area (wrapper'а)
             const rect = linesArea.getBoundingClientRect();
             let newX = e.clientX - rect.left;
             
-            // Границы
             newX = Math.max(0, Math.min(rect.width, newX));
             
-            // Перевод пикселей в значение ЗП (0..1000)
             const currentW = linesArea.clientWidth; 
             let newVal = (newX / currentW) * 1000;
-            
-            // Snap to step
             newVal = Math.round(newVal / currentStep) * currentStep;
             
-            // Constraints (не заезжать за соседей)
             const prev = (i > 0) ? grades[i-1].value : 0;
             const next = (i < grades.length - 1) ? grades[i+1].value : 1000;
             newVal = Math.max(prev, Math.min(next, newVal));
             
             g.value = newVal;
-            
-            // Обновляем визуал этой линии прямо сейчас
             updateLineVisual(line, g, currentW);
           });
           
           document.addEventListener('mouseup', () => {
             if(isDragging) {
               isDragging = false;
-              calculateMedians(); // Пересчитываем таблицу
+              // После перетаскивания нужно перерисовать график (чтобы обновить цветные зоны)
+              // и пересчитать таблицу
+              renderChart();
+              calculateMedians();
             }
           });
         }
         
-        // Обновляем позицию (даже если не драгаем, а просто ресайз окна/слайдера)
         updateLineVisual(line, g, wrapperWidth);
       });
     }
@@ -549,13 +605,12 @@
        lineEl.querySelector('.grade-value').textContent = gradeObj.value + 'k';
     }
 
-    // --- CALC MEDIANS ---
+    // --- TABLE CALC ---
     function getRangeForKey(key) {
       if (key === 'less_5k') return { low: 0, high: 5 };
       if (key === 'more_1000k') return { low: 1000, high: Infinity };
-      const nums = key.match(/\d+/g);
-      if(nums && nums.length===2) return { low: +nums[0], high: +nums[1] };
-      return {low:0, high:0};
+      const [l, h] = key.split('_').map(x => parseInt(x.replace('k','')));
+      return { low: l, high: h };
     }
     
     function percentile(arr, p) {
@@ -573,12 +628,10 @@
       const table = document.getElementById('grades-table');
       table.innerHTML = '';
       
-      // Header
       const hRow = table.insertRow();
       hRow.insertCell();
       grades.slice(0, -1).forEach(g => hRow.insertCell().textContent = g.name);
       
-      // Rows
       let percs = subPercentiles[subLevel] || [50];
       if(subLevel===1) percs = [marketPercentile];
       
@@ -595,19 +648,16 @@
                     const json = parseSalaryData(rec[f]);
                     for(const key in json) {
                         const {low, high} = getRangeForKey(key);
-                        // Если диапазон зарплат пересекается с грейдом
                         if (high > minV && low < maxV) {
                              (json[key]||[]).forEach(v => collected.push(v));
                         }
                     }
                 });
             });
-            
             row.insertCell().textContent = collected.length ? percentile(collected, percs[j]) : '-';
         }
       }
       
-      // Buttons
       const btnRow = table.insertRow();
       const td = btnRow.insertCell();
       td.colSpan = grades.length;
@@ -627,7 +677,6 @@
       }
     }
 
-    // Init
     window.addEventListener('DOMContentLoaded', () => {
       ['vacancyFilter','cityFilter','quarterFilter','stepFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => {
